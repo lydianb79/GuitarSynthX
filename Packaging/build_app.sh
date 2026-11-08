@@ -1,29 +1,62 @@
 #!/bin/bash
-# Builds an optimised, ad-hoc signed GuitarSynthX.app into ./build.
+# Builds optimised, ad-hoc signed GuitarSynthX apps into ./build, named by
+# the architecture they run on:
 #
-#   ./Packaging/build_app.sh             # universal: arm64 + x86_64 (default)
-#   ./Packaging/build_app.sh native      # only this Mac's architecture (faster)
-#   ./Packaging/build_app.sh arm64       # Apple Silicon only
-#   ./Packaging/build_app.sh x86_64      # Intel only
+#   build/GuitarSynthX-AppleSilicon.app   arm64
+#   build/GuitarSynthX-Intel.app          x86_64
+#   build/GuitarSynthX-Universal.app      arm64 + x86_64
 #
-# Each architecture is compiled separately and merged with `lipo`, so this
-# works with just the Xcode Command Line Tools (no full Xcode needed).
+#   ./Packaging/build_app.sh             # all three (default)
+#   ./Packaging/build_app.sh native      # only the app for this Mac (faster)
+#   ./Packaging/build_app.sh arm64       # Apple Silicon app only
+#   ./Packaging/build_app.sh x86_64      # Intel app only
+#
+# Each architecture is compiled separately (and merged with `lipo` for the
+# universal app), so this works with just the Xcode Command Line Tools.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MODE="${1:-universal}"
+MODE="${1:-all}"
 MIN_OS="13.0"
 case "$MODE" in
-  universal) ARCHS=(arm64 x86_64) ;;
+  all|universal) ARCHS=(arm64 x86_64) ;;
   arm64|x86_64) ARCHS=("$MODE") ;;
   native) ARCHS=("$(uname -m)") ;;
-  *) echo "Unknown mode '${MODE}' (use universal | native | arm64 | x86_64)"; exit 1 ;;
+  *) echo "Unknown mode '${MODE}' (use all | native | arm64 | x86_64)"; exit 1 ;;
 esac
+
+app_name() {
+  case "$1" in
+    arm64) echo "GuitarSynthX-AppleSilicon" ;;
+    x86_64) echo "GuitarSynthX-Intel" ;;
+    universal) echo "GuitarSynthX-Universal" ;;
+  esac
+}
+
+# Creates build/<name>.app from one or more architecture slices.
+make_app() {
+  local name="$1"; shift
+  local app="build/${name}.app"
+  rm -rf "$app"
+  mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+  if [[ $# -gt 1 ]]; then
+    lipo -create "$@" -output "$app/Contents/MacOS/GuitarSynthX"
+  else
+    cp "$1" "$app/Contents/MacOS/GuitarSynthX"
+  fi
+  cp Packaging/Info.plist "$app/Contents/Info.plist"
+  cp Packaging/Icon/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+  printf 'APPL????' > "$app/Contents/PkgInfo"
+  codesign --force --options runtime --entitlements Packaging/GuitarSynthX.entitlements --sign - "$app"
+  touch "$app"   # make Finder/Dock pick up the icon
+  echo "OK: ${app}  [$(lipo -archs "$app/Contents/MacOS/GuitarSynthX")]"
+}
 
 # Newer SwiftPM ("swiftbuild" build system) writes every architecture to the
 # same output path, so each slice is copied aside right after it is built.
 SLICES=build/slices
 rm -rf "$SLICES"
+rm -rf build/GuitarSynthX.app   # bundle name used by older versions of this script
 BINARIES=()
 for ARCH in "${ARCHS[@]}"; do
   TRIPLE="${ARCH}-apple-macosx${MIN_OS}"
@@ -39,27 +72,12 @@ for ARCH in "${ARCHS[@]}"; do
   BINARIES+=("${SLICES}/${ARCH}/GuitarSynthX")
 done
 
-APP=build/GuitarSynthX.app
-rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-
+echo "> Packaging and signing (ad-hoc, hardened runtime + audio-input entitlement)..."
+for ARCH in "${ARCHS[@]}"; do
+  make_app "$(app_name "$ARCH")" "${SLICES}/${ARCH}/GuitarSynthX"
+done
 if [[ ${#BINARIES[@]} -gt 1 ]]; then
-  echo "> Merging into a universal binary..."
-  lipo -create "${BINARIES[@]}" -output "$APP/Contents/MacOS/GuitarSynthX"
-else
-  cp "${BINARIES[0]}" "$APP/Contents/MacOS/GuitarSynthX"
+  make_app "$(app_name universal)" "${BINARIES[@]}"
 fi
 
-cp Packaging/Info.plist "$APP/Contents/Info.plist"
-cp Packaging/Icon/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-printf 'APPL????' > "$APP/Contents/PkgInfo"
-
-echo "> Signing (ad-hoc, hardened runtime + audio-input entitlement)..."
-codesign --force --options runtime --entitlements Packaging/GuitarSynthX.entitlements --sign - "$APP"
-
-# Make Finder/Dock pick up the new icon immediately
-touch "$APP"
-
-echo "OK: Built ${APP}"
-echo "  Architectures: $(lipo -archs "$APP/Contents/MacOS/GuitarSynthX")"
-echo "  Run:  open ${APP}"
+echo "Done. Run e.g.:  open build/$(app_name "$(uname -m)").app"

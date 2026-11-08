@@ -28,9 +28,9 @@ LFO, drive, chorus, phaser, delay and reverb.
 
 ```bash
 # Option A: proper .app bundle (recommended: own microphone permission, Dock icon)
-./Packaging/build_app.sh            # universal app: Apple Silicon + Intel
-./Packaging/build_app.sh native     # just this Mac's architecture (faster)
-open build/GuitarSynthX.app
+./Packaging/build_app.sh            # builds all three apps below
+./Packaging/build_app.sh native     # only the app for this Mac (faster)
+open build/GuitarSynthX-AppleSilicon.app
 
 # Option B: run straight from the package
 swift run -c release GuitarSynthX
@@ -51,6 +51,14 @@ If you denied it, re-enable it under *System Settings ▸ Privacy & Security ▸
 These run the pitch tracker against synthetic plucked strings (E2–C6 at 44.1/48/96 kHz).
 They cover legato slides, re-picks over a ringing note, false retriggers, extreme
 settings (NaN/overflow safety) and a CPU benchmark for mono and hex mode.
+
+The build produces three apps in `build/`, named for the Macs they run on:
+
+| App | Runs on |
+|---|---|
+| `GuitarSynthX-AppleSilicon.app` | Apple Silicon (M1 and later), arm64 |
+| `GuitarSynthX-Intel.app` | Intel Macs, x86_64 |
+| `GuitarSynthX-Universal.app` | Both (one download, roughly twice the size) |
 
 ## Getting the lowest latency
 
