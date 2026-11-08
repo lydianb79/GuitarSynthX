@@ -20,13 +20,23 @@ case "$MODE" in
   *) echo "Unknown mode '${MODE}' (use universal | native | arm64 | x86_64)"; exit 1 ;;
 esac
 
+# Newer SwiftPM ("swiftbuild" build system) writes every architecture to the
+# same output path, so each slice is copied aside right after it is built.
+SLICES=build/slices
+rm -rf "$SLICES"
 BINARIES=()
 for ARCH in "${ARCHS[@]}"; do
   TRIPLE="${ARCH}-apple-macosx${MIN_OS}"
   echo "> Building release for ${ARCH}..."
   swift build -c release --triple "$TRIPLE"
   BIN_DIR=$(swift build -c release --triple "$TRIPLE" --show-bin-path)
-  BINARIES+=("${BIN_DIR}/GuitarSynthX")
+  mkdir -p "${SLICES}/${ARCH}"
+  cp "${BIN_DIR}/GuitarSynthX" "${SLICES}/${ARCH}/GuitarSynthX"
+  if ! lipo "${SLICES}/${ARCH}/GuitarSynthX" -verify_arch "${ARCH}"; then
+    echo "ERROR: the ${ARCH} build produced: $(lipo -archs "${SLICES}/${ARCH}/GuitarSynthX")"
+    exit 1
+  fi
+  BINARIES+=("${SLICES}/${ARCH}/GuitarSynthX")
 done
 
 APP=build/GuitarSynthX.app
