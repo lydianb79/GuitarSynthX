@@ -4,6 +4,15 @@ All notable changes to GuitarSynthX. Versions follow `CFBundleShortVersionString
 in `Packaging/Info.plist`; `Packaging/make_release.sh` copies the section for the
 version being released into the GitHub release notes.
 
+## [1.3.0] - 2026-11-18
+
+### Added
+- **Stereo input.** Set *Input Mode* to *Stereo* to use two input channels:
+  *Input Ch* and the next one (1 + 2 by default). Both are averaged for note
+  detection, so it works whether the guitar is on one side or both, and the
+  *Dry Guitar* blend keeps its stereo image. Use it with stereo pedals and
+  modelers or a linked stereo pair on your interface.
+
 ## [1.1.2] - 2026-11-18
 
 ### Changed

@@ -180,6 +180,45 @@ static void testFalseRetrigger(double fs) {
     std::printf("False retrigger test fs=%.0f: %d notes, %d spurious retriggers\n", fs, notes, extra);
 }
 
+// Stereo input: the tracker hears the average of the two channels, and the dry
+// guitar keeps left on the left and right on the right.
+static void testStereoInput(double fs) {
+    struct Case { const char* name; float gl, gr; } cases[] = {
+        {"both channels", 1.0f, 1.0f}, {"left only", 1.0f, 0.0f}, {"right only", 0.0f, 1.0f}};
+    const int block = 64;
+    bool allOk = true;
+    for (const auto& c : cases) {
+        Engine eng; eng.prepare(fs, 2);
+        eng.setParam(P_IN_MODE, 2.0f);
+        std::mt19937 rng(3); PluckedString str; str.pluck(midiHz(57), (float)fs, 0.5f, rng);
+        std::vector<float> l(block), r(block), L(block), R(block);
+        const float* ch[2] = {l.data(), r.data()};
+        bool on = false; float hz = 0;
+        for (int b = 0; b < (int)(0.4 * fs / block); ++b) {
+            for (int i = 0; i < block; ++i) { const float v = str.next(); l[i] = v * c.gl; r[i] = v * c.gr; }
+            eng.process(ch, 2, L.data(), R.data(), block);
+            if (eng.tracker(0).noteActive()) { on = true; hz = eng.tracker(0).frequency(); }
+        }
+        const bool ok = on && std::fabs(hzToMidi(hz) - 57.0f) < 0.3f;
+        allOk &= ok;
+        std::printf("  stereo input, %-13s: %s (%.1f Hz)\n", c.name, ok ? "detected" : "MISSED", hz);
+    }
+    // dry stereo image: synth off, dry guitar on, tone only on the left
+    Engine eng; eng.prepare(fs, 2);
+    eng.setParam(P_IN_MODE, 2.0f); eng.setParam(P_MST_SYNTH, -60.0f); eng.setParam(P_MST_DRY, 0.0f);
+    std::vector<float> l(block), r(block, 0.0f), L(block), R(block);
+    const float* ch[2] = {l.data(), r.data()};
+    double eL = 0, eR = 0;
+    for (int b = 0; b < (int)(0.2 * fs / block); ++b) {
+        for (int i = 0; i < block; ++i) l[i] = 0.2f * std::sin(kTwoPi * 440.0f * (b * block + i) / (float)fs);
+        eng.process(ch, 2, L.data(), R.data(), block);
+        for (int i = 0; i < block; ++i) { eL += L[i] * L[i]; eR += R[i] * R[i]; }
+    }
+    const bool img = eL > 0 && eR < eL * 1e-4;
+    allOk &= img;
+    std::printf("Stereo input fs=%.0f: %s (dry guitar left/right separation %s)\n", fs, allOk ? "OK" : "FAILED", img ? "OK" : "WRONG");
+}
+
 static void benchmark(double fs, int buffer, bool hex, bool heavy = true) {
     Engine eng; eng.prepare(fs, hex ? 6 : 1);
     eng.setParam(P_IN_MODE, hex ? 1.0f : 0.0f);
@@ -324,6 +363,7 @@ int main() {
     for (double fs : {44100.0, 48000.0, 96000.0}) testFalseRetrigger(fs);
     testLegatoAndSilence(48000);
     testRepick(48000);
+    testStereoInput(48000);
     sanity(48000);
     for (int buf : {32, 64, 128}) benchmark(48000, buf, false);
     for (int buf : {32, 64}) benchmark(48000, buf, true);

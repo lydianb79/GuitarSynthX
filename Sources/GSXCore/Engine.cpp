@@ -53,7 +53,9 @@ void Engine::updateParams() {
     auto P = [this](int id) { return params_[id].load(std::memory_order_relaxed); };
     const float fs = static_cast<float>(fs_);
 
-    const bool hex = P(P_IN_MODE) > 0.5f;
+    const int inMode = static_cast<int>(std::lround(P(P_IN_MODE)));   // 0 mono, 1 hex, 2 stereo
+    const bool hex = inMode == 1;
+    stereoIn_ = inMode == 2;
     if (hex != hexMode_) {
         for (int t = 0; t < kMaxTrackers; ++t) {
             if (trackerVoice_[t] >= 0) voices_[trackerVoice_[t]].release();
@@ -257,6 +259,20 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
                     inPeak = std::max(inPeak, std::fabs(s));
                 }
             }
+        } else if (stereoIn_) {
+            // Both channels are averaged for the tracker; the dry guitar stays stereo.
+            const int chL = std::min(std::max(inChannel_, 0), std::max(chans - 1, 0));
+            const int chR = std::min(chL + 1, std::max(chans - 1, 0));
+            const float* l = (chans > 0 && in[chL]) ? in[chL] + off : nullptr;
+            const float* r = (chans > 0 && in[chR]) ? in[chR] + off : l;
+            for (int i = 0; i < n; ++i) {
+                const float a = l ? l[i] * inGain_ : 0.0f;
+                const float b = r ? r[i] * inGain_ : 0.0f;
+                trkBuf_[0][i] = 0.5f * (a + b);
+                dryBuf_[off + i] = a;
+                dryBufR_[off + i] = b;
+                inPeak = std::max(inPeak, std::max(std::fabs(a), std::fabs(b)));
+            }
         } else {
             const int ch = std::min(std::max(inChannel_, 0), std::max(chans - 1, 0));
             const float* src = (chans > 0 && in[ch]) ? in[ch] + off : nullptr;
@@ -267,6 +283,7 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
                 inPeak = std::max(inPeak, std::fabs(s));
             }
         }
+        if (!stereoIn_) std::memcpy(dryBufR_ + off, dryBuf_ + off, sizeof(float) * n);
         // ---- analysis -> note events
         for (int t = 0; t < numTrackers_; ++t) trackers_[t].process(trkBuf_[t], n);
         handleNotes();
@@ -288,9 +305,11 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
         for (int i = 0; i < frames; ++i) {
             sg += sStep; dg += dStep;
             dryBuf_[i] *= dg;                       // keep the scaled dry signal
-            const float dryIn = dryFx_ ? dryBuf_[i] * dryComp : 0.0f;
-            outL[i] = outL[i] * sg + dryIn;
-            outR[i] = outR[i] * sg + dryIn;
+            dryBufR_[i] *= dg;
+            const float dryL = dryFx_ ? dryBuf_[i] * dryComp : 0.0f;
+            const float dryR = dryFx_ ? dryBufR_[i] * dryComp : 0.0f;
+            outL[i] = outL[i] * sg + dryL;
+            outR[i] = outR[i] * sg + dryR;
         }
         synthGainS_ = synthGain_; dryGainS_ = dryGain_;
     }
@@ -311,7 +330,7 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
     }
 
     // ---- dry guitar that bypasses the effects
-    if (!dryFx_) for (int i = 0; i < frames; ++i) { outL[i] += dryBuf_[i]; outR[i] += dryBuf_[i]; }
+    if (!dryFx_) for (int i = 0; i < frames; ++i) { outL[i] += dryBuf_[i]; outR[i] += dryBufR_[i]; }
 
     // ---- master + limiter
     {

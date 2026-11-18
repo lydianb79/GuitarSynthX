@@ -77,8 +77,11 @@ instrument input. The built-in microphone works for a quick test.
    both **input** and **output** device, 48 kHz, and a 64-sample buffer.
    Click **Apply**.
 3. On the **Input & Tracking** tab, set **Input Ch** to the input your guitar
-   is plugged into. Play a note: the tuner display should show it. If nothing
-   happens, raise **Input Gain** or lower **Gate**.
+   is plugged into. If your signal comes in on two channels (a stereo pedal
+   or modeler, or a linked stereo pair), set **Input Mode** to *Stereo* and
+   **Input Ch** to the left one, e.g. 1 for channels 1 + 2. Play a note: the
+   tuner display should show it. If nothing happens, raise **Input Gain** or
+   lower **Gate**.
 4. Pick a sound from the **Presets** list on the left and play.
 
 Play single notes with a normal guitar input. Chords need a hex pickup (see
@@ -89,7 +92,7 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 | Area | What it does |
 |---|---|
 | **Presets** (left) | 70 factory sounds in 12 categories (see [Presets](#presets)). Search by name or category, click a category to open or close it, step through sounds with ◀ ▶ or ⌘[ / ⌘]. **Save** stores your own under *User* (in `~/Library/Application Support/GuitarSynthX/Presets`). Loading a preset changes only the sound; your input, gate and tracking settings stay as they are. |
-| **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Dynamics** makes the synth volume follow your playing. |
+| **Input & Tracking** | **Input Mode**: *Mono* (one channel), *Stereo* (the Input Ch and the next one, e.g. 1 + 2, averaged for note detection; **Dry Guitar** stays in stereo) or *Hex* (six channels, one per string). Input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Dynamics** makes the synth volume follow your playing. |
 | **Oscillators** | Osc A (up to 7-voice unison), Osc B (semitones/fine tune), FM from B to A, pulse width, sub-oscillator, noise. |
 | **Filter** | 24 dB ladder or 12 dB low-pass/band-pass/high-pass, drive, key tracking, **Pick Dynamics** (picking harder opens the filter, like an auto-wah), filter envelope. |
 | **Amp & LFO** | Amp envelope, velocity and **Patch Level** (the preset's own volume, applied after the effects). LFO with fade-in for vibrato, filter, pulse width and tremolo. |

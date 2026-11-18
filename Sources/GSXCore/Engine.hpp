@@ -64,6 +64,7 @@ private:
     float qNote_[kMaxTrackers];
     float lastMidi_[kMaxTrackers];
     bool  hexMode_ = false;
+    bool  stereoIn_ = false;    // Input Mode Stereo: channels inChannel_ and inChannel_+1
     int   numTrackers_ = 1;
 
     VoiceParams vp_;
@@ -92,6 +93,7 @@ private:
 
     float trkBuf_[kMaxTrackers][kSubBlock];
     float dryBuf_[kMaxBlock];
+    float dryBufR_[kMaxBlock];  // right dry channel; equals dryBuf_ unless the input is stereo
     uint64_t stamp_ = 0;
 
     float scope_[kScopeSize] = {};

@@ -15,7 +15,7 @@ static const char* kWaves = "Sine|Triangle|Saw|Square|Pulse";
 
 static const ParamDef kDefs[P_COUNT] = {
     // key               name              group       unit   choices                         min     max     def    type scale
-    {"in.mode",        "Input Mode",     "Input",    "",    "Mono|Hex (6 ch)",              0,      1,      0,     CH, LIN},
+    {"in.mode",        "Input Mode",     "Input",    "",    "Mono|Hex (6 ch)|Stereo (2 ch)",0,      2,      0,     CH, LIN},
     {"in.channel",     "Input Ch",       "Input",    "",    "",                             1,      32,     1,     I,  LIN},
     {"in.gain",        "Input Gain",     "Input",    "dB",  "",                             -12,    36,     0,     C,  LIN},
     {"in.gate",        "Gate",           "Input",    "dB",  "",                             -80,    -20,    -54,   C,  LIN},
