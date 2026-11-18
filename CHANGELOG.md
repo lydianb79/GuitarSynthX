@@ -4,6 +4,14 @@ All notable changes to GuitarSynthX. Versions follow `CFBundleShortVersionString
 in `Packaging/Info.plist`; `Packaging/make_release.sh` copies the section for the
 version being released into the GitHub release notes.
 
+## [1.1.2] - 2026-11-18
+
+### Changed
+- The tuner (note, frequency, cents, gate level and preset name) moved out of
+  the visualizer into its own bar above it, so it no longer covers the
+  waveform. The layout stays put as notes change, and in Hex mode the six
+  strings appear in the same bar.
+
 ## [1.1.1] - 2026-11-18
 
 ### Fixed

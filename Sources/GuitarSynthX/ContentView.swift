@@ -24,12 +24,14 @@ struct ContentView: View {
                 TopBar(status: status, showSettings: $showSettings)
                 if let err = synth.errorMessage { ErrorBanner(text: err) }
                 if synth.micPermission == .denied || synth.micPermission == .restricted { MicBanner() }
-                ZStack(alignment: .topLeading) {
+                // Tuner info sits in its own bar above the visualizer so it never
+                // covers the waveform.
+                VStack(spacing: 0) {
+                    TunerBar(status: status)
+                    Rectangle().fill(Theme.stroke).frame(height: 1)
                     MetalVisualizer()
-                    TunerHUD(status: status)
-                        .padding(14)
+                        .frame(minHeight: 220)
                 }
-                .frame(minHeight: 230)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal, 12)
                 .padding(.top, 8)
@@ -161,56 +163,94 @@ struct MicBanner: View {
 
 // MARK: - Tuner / note HUD
 
-struct TunerHUD: View {
+struct TunerBar: View {
     @EnvironmentObject var synth: SynthController
     @ObservedObject var status: StatusModel
 
     var body: some View {
-        let count = max(1, Int(status.status.trackerCount))
+        let hex = status.status.trackerCount > 1
         let t0 = status.trackers[0]
-        VStack(alignment: .leading, spacing: 6) {
-            if count == 1 {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    let note = NoteName.of(midi: t0.midi)
-                    Text(t0.frequency > 0 ? note.name : "–")
-                        .font(.system(size: 44, weight: .heavy, design: .rounded))
-                        .foregroundColor(t0.noteActive != 0 ? Theme.accent : .white.opacity(0.35))
-                    if t0.frequency > 0 {
-                        Text("\(note.octave)").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundColor(Theme.text2)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(String(format: "%.1f Hz", t0.frequency)).font(.system(size: 11, design: .monospaced))
-                            CentsBar(cents: note.cents).frame(width: 120, height: 6)
-                        }
-                    }
-                }
+        let gateOpen = hex ? status.trackers.contains(where: { $0.gate != 0 }) : t0.gate != 0
+        let levelDb = hex ? (status.trackers.map { $0.levelDb }.max() ?? -120) : t0.levelDb
+        HStack(spacing: 16) {
+            if hex {
+                hexStrings
             } else {
-                HStack(spacing: 8) {
-                    ForEach(0..<6, id: \.self) { i in
-                        let t = status.trackers[i]
-                        let note = NoteName.of(midi: t.midi)
-                        VStack(spacing: 2) {
-                            Text("S\(6 - i)").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.text2)
-                            Text(t.noteActive != 0 ? "\(note.name)\(note.octave)" : "–")
-                                .font(.system(size: 16, weight: .bold, design: .rounded))
-                                .foregroundColor(t.noteActive != 0 ? Theme.accent : .white.opacity(0.3))
-                        }
-                        .frame(width: 44)
-                        .padding(.vertical, 4)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.35)))
-                    }
+                monoNote(t0)
+            }
+            Rectangle().fill(Theme.stroke).frame(width: 1, height: 30)
+            HStack(spacing: 7) {
+                Circle()
+                    .fill(gateOpen ? Theme.accent : Color.white.opacity(0.15))
+                    .frame(width: 7, height: 7)
+                    .shadow(color: gateOpen ? Theme.accent : .clear, radius: 4)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(gateOpen ? "GATE OPEN" : "GATE")
+                        .font(.system(size: 9, weight: .bold)).tracking(1)
+                        .foregroundColor(Theme.text2)
+                    Text(String(format: "%.0f dBFS", max(levelDb, -99)))
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundColor(.white.opacity(0.6))
                 }
             }
-            HStack(spacing: 6) {
-                Circle().fill(t0.gate != 0 ? Theme.accent : Color.white.opacity(0.15)).frame(width: 7, height: 7)
-                Text(t0.gate != 0 ? "GATE OPEN" : "GATE").font(.system(size: 9, weight: .bold)).tracking(1)
+            .frame(width: 92, alignment: .leading)
+            Spacer(minLength: 8)
+            VStack(alignment: .trailing, spacing: 1) {
+                Text("PRESET")
+                    .font(.system(size: 9, weight: .bold)).tracking(1)
                     .foregroundColor(Theme.text2)
-                Text(String(format: "%.0f dBFS", max(t0.levelDb, -99))).font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(Theme.text2)
-                Text("· \(synth.currentPresetName)").font(.system(size: 10, weight: .semibold)).foregroundColor(.white.opacity(0.7))
+                Text(synth.currentPresetName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.85))
+                    .lineLimit(1)
             }
         }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.black.opacity(0.35)))
+        .padding(.horizontal, 14)
+        .frame(height: 56)
+        .background(Theme.panel)
+    }
+
+    /// Note name, frequency and cents meter. Fixed widths keep the layout from
+    /// shifting as notes change.
+    @ViewBuilder
+    private func monoNote(_ t: GSXTrackerStatus) -> some View {
+        let hasPitch = t.frequency > 0
+        let note = NoteName.of(midi: t.midi)
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(hasPitch ? note.name : "–")
+                .font(.system(size: 30, weight: .heavy, design: .rounded))
+                .foregroundColor(t.noteActive != 0 ? Theme.accent : .white.opacity(hasPitch ? 0.6 : 0.3))
+            Text(hasPitch ? "\(note.octave)" : "")
+                .font(.system(size: 14, weight: .bold, design: .rounded))
+                .foregroundColor(Theme.text2)
+        }
+        .frame(width: 66, alignment: .leading)
+        VStack(alignment: .leading, spacing: 5) {
+            Text(hasPitch ? String(format: "%.1f Hz", t.frequency) : "– Hz")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.white.opacity(hasPitch ? 0.85 : 0.4))
+            CentsBar(cents: hasPitch ? note.cents : 0)
+                .frame(width: 130, height: 6)
+                .opacity(hasPitch ? 1 : 0.35)
+        }
+    }
+
+    /// One box per string (S6 = low E) in Hex mode.
+    private var hexStrings: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<6, id: \.self) { i in
+                let t = status.trackers[i]
+                let note = NoteName.of(midi: t.midi)
+                VStack(spacing: 1) {
+                    Text("S\(6 - i)").font(.system(size: 9, weight: .bold)).foregroundColor(Theme.text2)
+                    Text(t.noteActive != 0 ? "\(note.name)\(note.octave)" : "–")
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundColor(t.noteActive != 0 ? Theme.accent : .white.opacity(0.3))
+                }
+                .frame(width: 42, height: 40)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.black.opacity(0.3)))
+            }
+        }
     }
 }
 
