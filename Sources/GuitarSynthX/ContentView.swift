@@ -1,4 +1,5 @@
 import SwiftUI
+import GSXCore
 
 enum PanelTab: String, CaseIterable, Identifiable {
     case tracking = "Input & Tracking"
