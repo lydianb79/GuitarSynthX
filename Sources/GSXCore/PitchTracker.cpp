@@ -12,7 +12,14 @@ namespace gsx {
 // note be recognised sooner with a shorter integration window.
 static constexpr float kOnsetLagFraction = 0.56f;
 // Minimum time after an onset before analysing (skips the pick transient).
-static constexpr float kMinOnsetMs = 2.5f;
+static constexpr float kMinOnsetMs = 1.5f;
+// A note ends when its level falls this far below its recent level (string muted).
+static constexpr float kMuteDropDb = -12.0f;
+// ...or when no clear pitch has been found for this long (only noise left).
+static constexpr float kPitchLossMs = 80.0f;
+// An estimate this much cleaner than the threshold is accepted without confirmation.
+static constexpr float kFastLockAp = 0.25f;
+static const float kMuteDropPow = std::pow(10.0f, kMuteDropDb / 10.0f);   // on mean-square values
 
 void PitchTracker::prepare(double sampleRate) {
     fs_ = sampleRate;
@@ -23,16 +30,19 @@ void PitchTracker::prepare(double sampleRate) {
     fastRel_ = onePoleCoef(25.0f, fs);
     slowAtk_ = onePoleCoef(30.0f, fs);
     slowRel_ = onePoleCoef(250.0f, fs);
-    hfSlowRel_ = onePoleCoef(60.0f, fs);
+    hfPowCoef_ = onePoleCoef(2.0f, fs);
+    hfSlotLen_ = std::max(1, static_cast<int>(0.001 * fs_));
     gateHoldSamples_ = static_cast<int>(0.040 * fs_);
-    refractorySamples_ = static_cast<int>(0.045 * fs_);
+    refractorySamples_ = static_cast<int>(0.030 * fs_);
+    muteRefRel_ = onePoleCoef(150.0f, fs);
+    muteArmDelay_ = static_cast<int>(0.030 * fs_);
     setSettings(set_);
     reset();
 }
 
 void PitchTracker::reset() {
     hp_.reset(); lp1_.reset(); lp2_.reset(); hf_.reset();
-    hfFast_ = hfSlow_ = 0;
+    hfPow_ = 0; std::memset(hfHist_, 0, sizeof(hfHist_)); hfHistPos_ = hfSlot_ = 0;
     fastEnv_ = slowEnv_ = 0;
     gateOpen_ = false; gateCloseCount_ = 0; refractory_ = 0;
     std::memset(hist_, 0, sizeof(hist_));
@@ -41,6 +51,15 @@ void PitchTracker::reset() {
     noteActive_ = false; pendingRetrigger_ = false;
     candCount_ = 0; peakEnv_ = 0; dynNorm_ = dynSmooth_ = 0;
     lastAp_ = 1; lastEstHz_ = 0;
+    muteEnv_ = muteRef_ = 0; sinceOnsetFull_ = 1 << 30; invalidRun_ = 0; requireOnset_ = false;
+    sinceSoftOnset_ = 1 << 30;
+}
+
+void PitchTracker::releaseNote() {
+    noteActive_ = false;
+    pendingRetrigger_ = false;
+    candCount_ = 0;
+    requireOnset_ = true;
 }
 
 void PitchTracker::setSettings(const TrackerSettings& s) {
@@ -63,9 +82,14 @@ void PitchTracker::process(const float* x, int n) {
         slowEnv_ += (a > slowEnv_ ? slowAtk_ : slowRel_) * (a - slowEnv_);
         if (fastEnv_ > peakEnv_) peakEnv_ = fastEnv_;
         const float hfa = std::fabs(hf_.process(h));
-        hfFast_ += (hfa > hfFast_ ? fastAtk_ : fastRel_) * (hfa - hfFast_);
-        hfSlow_ += (hfa > hfSlow_ ? slowAtk_ : hfSlowRel_) * (hfa - hfSlow_);
+        hfPow_ += hfPowCoef_ * (hfa * hfa - hfPow_);
+        if (++hfSlot_ >= hfSlotLen_) {           // one history slot per millisecond
+            hfSlot_ = 0;
+            hfHistPos_ = (hfHistPos_ + 1) % kHfHist;
+            hfHist_[hfHistPos_] = hfPow_;
+        }
         if (refractory_ > 0) --refractory_;
+        if (sinceSoftOnset_ < (1 << 30)) ++sinceSoftOnset_;
 
         bool onset = false;
         if (!gateOpen_) {
@@ -74,24 +98,30 @@ void PitchTracker::process(const float* x, int n) {
             if (fastEnv_ < gateLin_ * 0.5f) {
                 if (++gateCloseCount_ >= gateHoldSamples_) {
                     gateOpen_ = false;
-                    noteActive_ = false;
-                    pendingRetrigger_ = false;
+                    releaseNote();
                     onsetWindow_ = false;
-                    candCount_ = 0;
                 }
             } else {
                 gateCloseCount_ = 0;
             }
             // Onset = broadband level jump OR a burst of high-frequency pick noise
             // (catches soft re-picks while the previous note is still loud).
-            if (refractory_ == 0 && fastEnv_ > gateLin_ * 1.5f &&
-                (fastEnv_ > 2.0f * slowEnv_ ||
-                 (hfFast_ > 3.0f * hfSlow_ && hfFast_ > gateLin_ * 0.3f && hfFast_ > 0.08f * fastEnv_)))
-                onset = true;
+            if (refractory_ == 0 && fastEnv_ > gateLin_ * 1.5f) {
+                const bool bb = fastEnv_ > 2.0f * slowEnv_;
+                float ref = 0.0f;                    // highest HF power 3..25 ms ago
+                for (int k = 3; k <= 25; ++k) ref = std::max(ref, hfHist_[(hfHistPos_ - k + kHfHist) % kHfHist]);
+                const float g = gateLin_ * 0.3f, f = 0.08f * fastEnv_;
+                const bool hf = hfPow_ > 6.0f * ref && hfPow_ > g * g && hfPow_ > f * f;
+                if (bb || hf) onset = true;
+                // weak cue: a smaller jump; only acts together with a new stable pitch
+                else if ((hfPow_ > 2.5f * ref && hfPow_ > g * g) || fastEnv_ > 1.3f * slowEnv_) sinceSoftOnset_ = 0;
+            }
         }
         if (onset && refractory_ == 0 && (set_.retrigger || !noteActive_)) {
             refractory_ = refractorySamples_;
             sinceOnset_ = 0;
+            sinceOnsetFull_ = 0;
+            requireOnset_ = false;
             onsetWindow_ = true;
             pendingRetrigger_ = noteActive_;
             candCount_ = 0;
@@ -102,10 +132,20 @@ void PitchTracker::process(const float* x, int n) {
         // level so only a *new* transient can trigger the next onset.
         if (onsetHold_ > 0 && --onsetHold_ == 0) {
             slowEnv_ = std::max(slowEnv_, fastEnv_);
-            hfSlow_ = std::max(hfSlow_, hfFast_);
         }
 
         const float l = lp2_.process(lp1_.process(h));
+
+        // ---- mute detection: a sudden drop of the (band-limited) string level
+        muteEnv_ += muteCoef_ * (l * l - muteEnv_);
+        if (sinceOnsetFull_ < (1 << 30)) ++sinceOnsetFull_;
+        if (noteActive_ && sinceOnsetFull_ > muteArmDelay_) {
+            muteRef_ = std::max(muteEnv_, muteRef_ + muteRefRel_ * (muteEnv_ - muteRef_));
+            if (muteEnv_ < muteRef_ * kMuteDropPow) releaseNote();
+        } else {
+            muteRef_ = muteEnv_;
+        }
+
         if (++decimPhase_ >= decim_) {
             decimPhase_ = 0;
             hist_[histW_] = l;
@@ -114,6 +154,11 @@ void PitchTracker::process(const float* x, int n) {
             if (sinceOnset_ < (1 << 30)) ++sinceOnset_;
             if (++hopCount_ >= hop_) { hopCount_ = 0; analyse(); }
         }
+    }
+    // mute-detector smoothing: 1.5 periods of the current note (4..25 ms)
+    {
+        const float periodMs = currentHz_ > 0.0f ? 1000.0f / currentHz_ : 10.0f;
+        muteCoef_ = onePoleCoef(clampf(1.5f * periodMs, 4.0f, 25.0f), static_cast<float>(fs_));
     }
     const float d = peakEnv_ > 1e-6f ? clampf(fastEnv_ / peakEnv_, 0.0f, 1.0f) : 0.0f;
     dynSmooth_ += 0.3f * (d - dynSmooth_);
@@ -172,7 +217,7 @@ void PitchTracker::analyse() {
     energy_[0] = 0.0f;
     for (int i = 0; i < L; ++i) energy_[i + 1] = energy_[i] + xp[i] * xp[i];
     const float e0 = energy_[window];
-    if (e0 < 1e-10f) { lastEstHz_ = 0; return; }
+    if (e0 < 1e-10f) { lastEstHz_ = 0; onEstimate(false, 0); return; }
 
     // Cumulative mean normalised difference
     cmnd_[0] = 1.0f;
@@ -235,11 +280,19 @@ void PitchTracker::analyse() {
     const float hz = static_cast<float>(fsD_) / t;
     lastAp_ = b;
     lastEstHz_ = hz;
-    onEstimate(b < thr, hz);
+    onEstimate(b < thr, hz, b);
 }
 
-void PitchTracker::onEstimate(bool valid, float hz) {
-    if (!valid) return;
+void PitchTracker::onEstimate(bool valid, float hz, float ap) {
+    if (!valid) {
+        // No clear pitch left (only noise / a muted string): end the note.
+        invalidRun_ += hop_;
+        if (noteActive_ && !pendingRetrigger_ && !onsetWindow_ &&
+            invalidRun_ > static_cast<int>(kPitchLossMs * 0.001 * fsD_))
+            releaseNote();
+        return;
+    }
+    invalidRun_ = 0;
     const float m = hzToMidi(hz);
     if (candCount_ > 0 && std::fabs(m - candMidi_) < 0.5f) {
         ++candCount_;
@@ -247,10 +300,20 @@ void PitchTracker::onEstimate(bool valid, float hz) {
         candCount_ = 1;
     }
     candMidi_ = m;
-    const bool stable = candCount_ >= set_.stability;
+    // Normally `stability` agreeing estimates are needed; a single, very clean
+    // estimate is trusted straight away (faster response on clear notes).
+    const bool stable = candCount_ >= set_.stability || ap < kFastLockAp * set_.threshold;
 
-    if (!noteActive_) { if (stable) noteOn(hz); return; }
+    if (!noteActive_) { if (stable && !requireOnset_) noteOn(hz); return; }
     if (pendingRetrigger_) { if (stable) noteOn(hz); return; }
+    // A clearly different, stable pitch right after a weak pick-like cue is a
+    // new picked note whose attack was too soft to count as an onset.
+    if (set_.retrigger && stable && std::fabs(m - currentMidi_) >= 0.7f &&
+        sinceSoftOnset_ < static_cast<int>(0.040 * fs_)) {
+        sinceSoftOnset_ = 1 << 30;
+        noteOn(hz);
+        return;
+    }
     if (std::fabs(m - currentMidi_) < 0.7f || stable) {
         currentHz_ = hz;          // bends / vibrato / slides / legato jumps
         currentMidi_ = m;

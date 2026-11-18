@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdlib>
 #include <string>
+#include <cstdint>
 
 using namespace gsx;
 
@@ -180,6 +181,130 @@ static void testFalseRetrigger(double fs) {
     std::printf("False retrigger test fs=%.0f: %d notes, %d spurious retriggers\n", fs, notes, extra);
 }
 
+
+// ---------------------------------------------------------------- note-off / fast playing
+// Feeds `in` (mono) through a fresh engine in 32-sample blocks and records, per
+// block, whether the tracker holds a note, its counter, its pitch and the synth
+// output level. Returns the recorded timeline.
+struct Frame { bool active; uint32_t counter; float midi; float outRms; };
+static std::vector<Frame> runTimeline(Engine& eng, const std::vector<float>& in, int block = 32) {
+    std::vector<Frame> tl;
+    std::vector<float> x(block), L(block), R(block);
+    const float* ch[1] = {x.data()};
+    for (size_t p = 0; p + block <= in.size(); p += block) {
+        for (int i = 0; i < block; ++i) x[i] = in[p + i];
+        eng.process(ch, 1, L.data(), R.data(), block);
+        double e = 0; for (int i = 0; i < block; ++i) e += L[i] * L[i];
+        const auto& tr = eng.tracker(0);
+        tl.push_back({tr.noteActive(), tr.noteCounter(), tr.noteActive() ? hzToMidi(tr.frequency()) : 0.0f,
+                      (float)std::sqrt(e / block)});
+    }
+    return tl;
+}
+
+static void testNoteOff(double fs) {
+    std::printf("Note-off behaviour fs=%.0f (time from the mute/stop until the tracker releases the note):\n", fs);
+    const int block = 32;
+    const float msPerBlock = 1000.0f * block / (float)fs;
+    struct Case { const char* name; int kind; };
+    const Case cases[] = {{"mute -> silence", 0}, {"mute -> noise -50 dBFS", 1},
+                          {"mute -> leaked tone -40 dBFS", 2}, {"let ring 8 s", 3}};
+    for (int note : {40, 52, 64}) {
+        for (const auto& c : cases) {
+            Engine eng; eng.prepare(fs, 1);
+            std::mt19937 rng(21); PluckedString s; s.pluck(midiHz(note), (float)fs, 0.5f, rng);
+            Noise nz;
+            const int ring = (int)(0.6 * fs);
+            const int total = (int)((c.kind == 3 ? 8.6 : 1.6) * fs);
+            std::vector<float> in(total);
+            const float muteTau = 0.004f * (float)fs;   // fingers damp the string within a few ms
+            for (int i = 0; i < total; ++i) {
+                float v = s.next();
+                if (c.kind != 3 && i >= ring) v *= std::exp(-(i - ring) / muteTau);
+                if (c.kind != 3 && i >= ring) {
+                    if (c.kind == 1) v += 0.0032f * nz.next() * 1.7f;                  // ~ -50 dBFS noise
+                    if (c.kind == 2) v += 0.01f * std::sin(kTwoPi * midiHz(note) * i / (float)fs); // -40 dBFS tone
+                }
+                in[i] = v;
+            }
+            auto tl = runTimeline(eng, in, block);
+            const int muteBlock = ring / block;
+            int offAt = -1; uint32_t counterAtMute = tl[muteBlock].counter; int extraNotes = 0;
+            for (size_t b = muteBlock; b < tl.size(); ++b) {
+                if (offAt < 0 && !tl[b].active) offAt = (int)b;
+                if (tl[b].counter != counterAtMute) { extraNotes = (int)(tl[b].counter - counterAtMute); }
+            }
+            if (c.kind == 3)
+                std::printf("  midi %d %-30s note ends after %s\n", note, c.name,
+                            offAt < 0 ? "never (8 s)" : (std::to_string((int)((offAt - muteBlock) * msPerBlock + 600)) + " ms").c_str());
+            else
+                std::printf("  midi %d %-30s %s%s\n", note, c.name,
+                            offAt < 0 ? "NEVER released" : (std::to_string((int)((offAt - muteBlock) * msPerBlock)) + " ms").c_str(),
+                            extraNotes ? "  (+spurious new note)" : "");
+        }
+    }
+}
+
+static void testFastSequence(double fs) {
+    std::printf("Fast playing fs=%.0f (16th notes; hit = right note triggered within 40 ms of the pick):\n", fs);
+    const int block = 32;
+    for (double bpm : {150.0, 180.0}) {
+        for (int mode = 0; mode < 2; ++mode) {    // 0 = same string (previous note cut), 1 = two strings alternating (previous rings on)
+            Engine eng; eng.prepare(fs, 1);
+            std::mt19937 rng(77);
+            const int step = (int)(fs * 60.0 / bpm / 4.0);
+            const int scale[] = {45, 47, 48, 50, 52, 53, 55, 57, 59, 60, 62, 64};
+            std::uniform_int_distribution<int> pick(0, 11);
+            std::uniform_real_distribution<float> amp(0.3f, 0.5f);
+            const int nNotes = 48;
+            std::vector<int> notes(nNotes);
+            int prev = -1;
+            for (int k = 0; k < nNotes; ++k) { int n; do { n = scale[pick(rng)]; } while (n == prev); notes[k] = prev = n; }
+            PluckedString a, b;
+            std::vector<float> in((size_t)step * nNotes + (size_t)(0.3 * fs));
+            const int dampLen = (int)(0.004 * fs);   // the pick touches (damps) the string before plucking it
+            for (int k = 0; k < nNotes; ++k) {
+                PluckedString& cur = (mode == 1 && (k & 1)) ? b : a;
+                if (k > 0 && mode == 0) {
+                    size_t base = (size_t)k * step;
+                    for (int i = 0; i < dampLen && base >= (size_t)dampLen; ++i)
+                        in[base - dampLen + i] *= 1.0f - 0.85f * (float)i / dampLen;
+                }
+                cur.pluck(midiHz(notes[k]), (float)fs, amp(rng), rng);
+                for (int i = 0; i < step; ++i) {
+                    float v = cur.next();
+                    if (mode == 1) { PluckedString& other = (k & 1) ? a : b; v += 0.6f * other.next(); }
+                    in[(size_t)k * step + i] = v;
+                }
+            }
+            auto tl = runTimeline(eng, in, block);
+            int hits = 0; double latSum = 0; int wrongEvents = 0;
+            for (int k = 0; k < nNotes; ++k) {
+                const size_t b0 = (size_t)k * step / block, b1 = std::min(tl.size(), ((size_t)(k + 1) * step) / block);
+                const uint32_t c0 = b0 > 0 ? tl[b0 - 1].counter : 0;
+                int hitAt = -1;
+                for (size_t bb = b0; bb < b1; ++bb) {
+                    if (tl[bb].counter != c0 && tl[bb].active && std::fabs(tl[bb].midi - notes[k]) < 0.5f) {
+                        if ((bb - b0) * block * 1000.0 / fs <= 40.0) hitAt = (int)(bb - b0);
+                        break;
+                    }
+                }
+                // wrong pitch held for a noticeable time (> 8 ms) within the note slot
+                int wrongRun = 0, maxWrong = 0;
+                for (size_t bb = b0; bb < b1; ++bb) {
+                    const bool wrong = tl[bb].active && std::fabs(tl[bb].midi - notes[k]) >= 0.5f
+                                       && (bb - b0) * block * 1000.0 / fs > 40.0;
+                    wrongRun = wrong ? wrongRun + 1 : 0; maxWrong = std::max(maxWrong, wrongRun);
+                }
+                if (maxWrong * block * 1000.0 / fs > 8.0) ++wrongEvents;
+                if (hitAt >= 0) { ++hits; latSum += (hitAt + 1) * block * 1000.0 / fs; }
+            }
+            std::printf("  %3.0f bpm %-16s hits %2d/%d, avg latency %.1f ms, wrong-note stretches %d\n",
+                        bpm, mode ? "two strings" : "same string", hits, nNotes, hits ? latSum / hits : 0.0, wrongEvents);
+        }
+    }
+}
+
 static void benchmark(double fs, int buffer, bool hex, bool heavy = true) {
     Engine eng; eng.prepare(fs, hex ? 6 : 1);
     eng.setParam(P_IN_MODE, hex ? 1.0f : 0.0f);
@@ -315,6 +440,9 @@ static void testEffects(float fs) {
 
 int main() {
     testEffects(48000.0f);
+    testNoteOff(48000);
+    testFastSequence(48000);
+    if (std::getenv("GSX_QUICK")) return 0;
     for (double fs : {44100.0, 48000.0, 96000.0}) {
         Result r;
         testDetection(fs, 2, r, false);

@@ -137,14 +137,21 @@ impressions, not samples.
 
 ## Getting the lowest latency
 
-1. **Use one device for input and output.** The app then runs input and output
+1. **Use an audio interface, not the Mac's built-in microphone and speakers.**
+   On a MacBook the built-in microphone and speakers alone add about 60 ms of
+   delay (shown under *LATENCY*), several times more than the note detection.
+   They also let the synth's sound leak from the speakers back into the
+   microphone. With a guitar plugged into an interface, the round trip is
+   typically 5–10 ms. Use headphones or monitors so the sound doesn't reach
+   the pickups or microphone.
+2. **Use one device for input and output.** The app then runs input and output
    in a single callback with no extra buffering. Two separate devices work too,
    bridged by a small safety buffer; if you must use two, combine them into an
    *Aggregate Device* in Audio MIDI Setup.
-2. **Buffer size 32–64 samples.** If the *XRUNS* counter keeps climbing, go up
+3. **Buffer size 32–64 samples.** If the *XRUNS* counter keeps climbing, go up
    one step.
-3. **48 kHz** is the sweet spot. Higher rates shorten buffers but cost more CPU.
-4. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
+4. **48 kHz** is the sweet spot. Higher rates shorten buffers but cost more CPU.
+5. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
    to the lowest note you actually play. A higher lowest note means faster
    detection and less CPU.
 
@@ -168,11 +175,43 @@ first of the six channels on the *Input & Tracking* tab.
 
 A pitch can't be known until about one to two cycles of the string's vibration
 have arrived. GuitarSynthX starts analysing right after the pick attack, using
-only post-attack audio, with a window that grows as audio comes in. High notes
-lock in within a few milliseconds; the low E string (82 Hz) takes about
-20–25 ms. On the synthetic test set at 48 kHz, 45 of 45 notes were detected
-correctly, on average about 12 ms after the pick. Your audio interface's own
-latency comes on top of that.
+only post-attack audio, with a window that grows as audio comes in. A single,
+very clean reading is accepted straight away; otherwise two matching readings
+confirm the note. High notes lock in within a few milliseconds; the low E
+string (82 Hz) takes about 20–25 ms. On the synthetic test set at 48 kHz,
+45 of 45 notes were detected correctly, on average about 12 ms after the pick.
+Your audio interface's own latency comes on top of that.
+
+### Stopping notes
+
+A note ends as soon as one of these happens:
+
+* **You mute the string.** A sudden drop of the string's level ends the note.
+  This takes about 10 ms on the high strings and 45 ms on the low E, even with
+  background noise.
+* **No clear pitch is left** for 80 ms, for example only noise or hum after
+  the string has stopped.
+* **The input falls below the Gate.**
+
+After a note has ended this way, only a new pick starts the next one, so
+leftover hum or sound leaking back from the speakers can't restart it. What you
+hear after the note ends is the preset's own release and its delay/reverb tail.
+For a tighter stop, shorten **Release** on the *Amp & LFO* tab.
+
+### Fast playing
+
+Each pick is detected from its burst of high-frequency pick noise, compared
+with the previous few milliseconds rather than the previous note. A softer
+pick still counts as a new note when it brings a clearly different pitch. In
+tests with 16th notes at 150–180 BPM on one string, 45–47 of 48 notes
+retriggered correctly. Hammer-ons, pull-offs and slides without a pick still
+change the pitch legato, without a new attack.
+
+Letting the previous string ring while you pick the next one (fast runs across
+strings) means two notes sound at once. In Mono mode that is polyphony again,
+and the tracker can pick the wrong one of the two. Muting the previous string
+with the picking hand (as for clean single-note playing anyway) or a hex pickup
+avoids this.
 
 ## Building from source
 
@@ -223,6 +262,9 @@ tracker, and check:
 * note accuracy and detection time
 * legato slides, and re-picks over a still-ringing note
 * that long notes don't retrigger by themselves
+* how fast a muted note ends, with silence, background noise or a leaked tone
+  after the mute
+* fast 16th-note sequences at 150 and 180 BPM, on one string and across two
 * delay timing with tempo sync, and ducking
 * reverb tails decaying at every type and shimmer setting
 * NaN/overflow safety at extreme settings
@@ -289,7 +331,9 @@ your speakers.
 ## Notes and limitations
 
 * **Single notes on a normal guitar input.** Chords need a hexaphonic pickup
-  and **Hex** input mode (see [Playing chords](#playing-chords)).
+  and **Hex** input mode (see [Playing chords](#playing-chords)). The same
+  applies to fast runs where the previous string keeps ringing (see
+  [Fast playing](#fast-playing)).
 * **Not notarized.** Releases are signed ad-hoc, so macOS shows a warning on
   first launch (see [Download & install](#download--install)). Removing it
   requires signing with an Apple Developer ID and notarizing.

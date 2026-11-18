@@ -4,6 +4,26 @@ All notable changes to GuitarSynthX. Versions follow `CFBundleShortVersionString
 in `Packaging/Info.plist`; `Packaging/make_release.sh` copies the section for the
 version being released into the GitHub release notes.
 
+## [1.2.0] - 2026-11-18
+
+### Changed
+- **Notes stop when you stop.** Muting a string now ends the note within about
+  10 ms (high strings) to 45 ms (low E). Before, it took 140–160 ms, and with
+  background noise or sound leaking from the speakers into the microphone the
+  note never ended. Notes also end when no clear pitch is left for 80 ms.
+- After a note has ended, only a new pick starts the next one, so hum or
+  speaker sound can't restart it.
+- **Fast playing:** picks are detected against the last few milliseconds
+  instead of the previous note's attack, and a softer pick that brings a
+  clearly new pitch also counts. 16th notes at 150–180 BPM on one string:
+  45–47 of 48 notes now retrigger correctly (before: 27–28).
+- **Snappier response:** a single very clean pitch reading is accepted
+  immediately, and analysis starts 1 ms earlier after the pick.
+
+### Documentation
+- README: built-in microphone and speakers add about 60 ms of latency, so use
+  an interface. New "Stopping notes" and "Fast playing" sections.
+
 ## [1.1.2] - 2026-11-18
 
 ### Changed
