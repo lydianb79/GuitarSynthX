@@ -8,7 +8,7 @@
   A native macOS guitar synthesizer. Plug in your guitar: GuitarSynthX detects
   what you play in real time and plays it back as a synth.<br>
   <a href="https://github.com/lydianb79/GuitarSynthX/releases/latest"><b>Download the latest release</b></a>
-  · macOS 13+ · Apple Silicon & Intel
+  · macOS 13+ · Apple Silicon & Intel · <a href="CHANGELOG.md">What's new</a>
 </p>
 
 ---
@@ -36,6 +36,7 @@
 - [Making a release](#making-a-release)
 - [How it works](#how-it-works)
 - [Notes and limitations](#notes-and-limitations)
+- [Changelog](CHANGELOG.md)
 
 ## Download & install
 
@@ -137,6 +138,22 @@ impressions, not samples.
    to the lowest note you actually play. A higher lowest note means faster
    detection and less CPU.
 
+### Playing chords
+
+**Normal guitar input (Mono mode): one note at a time.** The pitch detector
+expects a single note. A strummed chord reaches it as one mixed signal, so you
+get at most one synth note. With simple intervals such as power chords, that is
+often a note an octave below the root. With fuller chords you may get no note
+or a note that jumps around.
+
+**Hexaphonic pickup (Hex mode): full polyphony.** With a 6-channel GK-style
+pickup, each string arrives on its own channel and gets its own pitch detector
+and synth voice. The six strings are spread across the stereo field.
+Chords, arpeggios, and bends on one string while the others ring all work. You
+need a converter or interface that delivers the six strings to the Mac as
+separate audio channels. Set **Input Mode** to *Hex* and **Input Ch** to the
+first of the six channels on the *Input & Tracking* tab.
+
 ### How fast is detection?
 
 A pitch can't be known until about one to two cycles of the string's vibration
@@ -209,24 +226,23 @@ clips, goes silent or drifts more than 1 dB from the target loudness.
 ## Making a release
 
 1. Bump `CFBundleShortVersionString` (and `CFBundleVersion`) in
-   `Packaging/Info.plist`, commit and push.
-2. Build the apps: `./Packaging/build_app.sh`
-3. Zip the apps for each architecture. `ditto` keeps the code signature intact:
+   `Packaging/Info.plist`, add a section for the new version to
+   [CHANGELOG.md](CHANGELOG.md), commit and push.
+2. On a Mac, run:
    ```bash
-   VERSION=1.1.0
-   mkdir -p dist
-   for n in AppleSilicon Intel; do
-     ditto -c -k --keepParent "build/GuitarSynthX-$n.app" "dist/GuitarSynthX-v$VERSION-macOS-$n.zip"
-   done
-   shasum -a 256 dist/*.zip
+   ./Packaging/make_release.sh
    ```
-4. Publish on GitHub, putting the checksums into the release notes:
-   ```bash
-   gh release create "v$VERSION" dist/GuitarSynthX-v$VERSION-macOS-*.zip \
-     --title "GuitarSynthX v$VERSION" --notes-file dist/RELEASE_NOTES.md
-   ```
-   Or create it in the browser under **Releases ▸ Draft a new release** and drag
-   in the zips.
+   This builds both architectures and checks each app (right architecture,
+   valid signature, right version). It zips them into `dist/` with `ditto`,
+   which keeps the signature intact. Then it writes the release notes from
+   the changelog plus download, install and checksum sections, and publishes
+   the release on GitHub.
+   * With the [GitHub CLI](https://cli.github.com) installed and logged in
+     (`gh auth login`), it publishes directly.
+   * Without it, the notes are copied to your clipboard and GitHub's
+     new-release page opens with the tag and title filled in. Paste the
+     notes, drag in the two zips from `dist/` and click **Publish release**.
+   * `--no-publish` stops after the zips and notes.
 
 `dist/` and `build/` are ignored by git.
 
@@ -248,6 +264,7 @@ Sources/
     SynthController.swift  devices, engine lifecycle, presets, saved settings
 Packaging/
   build_app.sh             builds the per-architecture apps
+  make_release.sh          builds, checks, zips and publishes a release
   Info.plist, *.entitlements
   Icon/                    AppIcon.svg (source), AppIcon-1024.png, AppIcon.icns
 Tests/                     engine tests, benchmark, preset checker
@@ -262,7 +279,7 @@ your speakers.
 ## Notes and limitations
 
 * **Single notes on a normal guitar input.** Chords need a hexaphonic pickup
-  and **Hex** input mode on the *Input & Tracking* tab.
+  and **Hex** input mode (see [Playing chords](#playing-chords)).
 * **Not notarized.** Releases are signed ad-hoc, so macOS shows a warning on
   first launch (see [Download & install](#download--install)). Removing it
   requires signing with an Apple Developer ID and notarizing.
