@@ -21,7 +21,6 @@ struct TrackerSettings {
     float hopMs      = 1.0f;
     float gateDb     = -54.0f;
     bool  retrigger  = true;
-    int   releaseMode = 1;     // Note Off: 0 gate only, 1 normal, 2 fast
 };
 
 class PitchTracker {
@@ -52,7 +51,7 @@ public:
 private:
     void analyse();
     bool yin(int maxTau, float& outHz, float& outAp);
-    void onEstimate(bool valid, float hz, float ap = 1.0f);
+    void onEstimate(bool valid, float hz);
     void noteOn(float hz);
 
     double fs_ = 48000.0;
@@ -63,32 +62,10 @@ private:
 
     // filters
     Biquad hp_, lp1_, lp2_, hf_;
-    // pick detector: high-frequency power vs. the highest power 3..25 ms ago
-    static constexpr int kHfHist = 32;   // 1 ms slots
-    float hfPow_ = 0, hfPowCoef_ = 0.01f;
-    float hfHist_[kHfHist] = {};
-    int   hfHistPos_ = 0, hfSlot_ = 0, hfSlotLen_ = 48;
+    float hfFast_ = 0, hfSlow_ = 0, hfSlowRel_ = 0;
     float hopPhase_ = 0;
     int   onsetHold_ = 0;
     uint32_t fullSweep_ = 0;
-
-    // note-off detection
-    float muteEnv_ = 0;        // mean-square level of the band-limited signal (over whole periods, updated every ms)
-    static constexpr int kMuteHist = 128;  // 1 ms slots of muteEnv_
-    float muteHist_[kMuteHist] = {};
-    int   muteHistPos_ = 0;
-    int   muteLowMs_ = 0;      // ms the level has stayed collapsed
-    float notePeakPow_ = 0;    // highest muteEnv_ since the note started
-    void  checkMute();
-    float periodPower() const;
-    float mutePow_ = 0.0158f, lossPow_ = 0.00025f;
-    int   lossSamples_ = 0;
-    int   muteArmDelay_ = 0;   // samples after an onset before mute detection is armed
-    int   sinceOnsetFull_ = 1 << 30;
-    int   invalidRun_ = 0;     // decimated samples since the last valid pitch estimate
-    bool  requireOnset_ = false; // after a tracker note-off only a new pick starts a note
-    int   sinceSoftOnset_ = 1 << 30; // samples since a weak pick-like cue (used with a pitch jump)
-    void  releaseNote();
     // envelope
     float fastEnv_ = 0, slowEnv_ = 0;
     float fastAtk_ = 0, fastRel_ = 0, slowAtk_ = 0, slowRel_ = 0;

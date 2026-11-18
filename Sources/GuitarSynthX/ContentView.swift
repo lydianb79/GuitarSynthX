@@ -195,7 +195,6 @@ struct TunerBar: View {
                 }
             }
             .frame(width: 92, alignment: .leading)
-            if status.recordSeconds != nil { recIndicator }
             Spacer(minLength: 8)
             VStack(alignment: .trailing, spacing: 1) {
                 Text("PRESET")
@@ -210,22 +209,6 @@ struct TunerBar: View {
         .padding(.horizontal, 14)
         .frame(height: 56)
         .background(Theme.panel)
-    }
-
-    private var recIndicator: some View {
-        let secs = Int(status.recordSeconds ?? 0)
-        return Button { synth.toggleRecording() } label: {
-            HStack(spacing: 6) {
-                Circle().fill(Color.red).frame(width: 8, height: 8)
-                Text(String(format: "REC %d:%02d", secs / 60, secs % 60))
-                    .font(.system(size: 11, weight: .bold, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.9))
-            }
-            .padding(.horizontal, 8).padding(.vertical, 4)
-            .background(Color.red.opacity(0.18), in: RoundedRectangle(cornerRadius: 5))
-        }
-        .buttonStyle(.plain)
-        .help("Recording the guitar input. Click to stop and save.")
     }
 
     /// Note name, frequency and cents meter. Fixed widths keep the layout from
@@ -301,7 +284,7 @@ struct PanelView: View {
                 case .tracking:
                     card("Input", keys: ["in.mode", "in.channel", "in.gain", "in.gate", "out.channel"])
                     card("Pitch Detection", keys: ["trk.lowest", "trk.highest", "trk.threshold", "trk.stability", "trk.hop"])
-                    card("Note Behaviour", keys: ["trk.pitchmode", "trk.glide", "trk.transpose", "trk.retrigger", "trk.release", "trk.dynamics"])
+                    card("Note Behaviour", keys: ["trk.pitchmode", "trk.glide", "trk.transpose", "trk.retrigger", "trk.dynamics"])
                 case .osc:
                     card("Oscillator A", keys: ["oscA.wave", "oscA.octave", "oscA.unison", "oscA.detune"])
                     card("Oscillator B", keys: ["oscB.wave", "oscB.semi", "oscB.fine", "osc.fm"], tint: Theme.accent2)

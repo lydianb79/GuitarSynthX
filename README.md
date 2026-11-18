@@ -89,7 +89,7 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 | Area | What it does |
 |---|---|
 | **Presets** (left) | 70 factory sounds in 12 categories (see [Presets](#presets)). Search by name or category, click a category to open or close it, step through sounds with ◀ ▶ or ⌘[ / ⌘]. **Save** stores your own under *User* (in `~/Library/Application Support/GuitarSynthX/Presets`). Loading a preset changes only the sound; your input, gate and tracking settings stay as they are. |
-| **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Note Off** sets how quickly notes end when you mute (see [Stopping notes](#stopping-notes)). **Dynamics** makes the synth volume follow your playing. |
+| **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Dynamics** makes the synth volume follow your playing. |
 | **Oscillators** | Osc A (up to 7-voice unison), Osc B (semitones/fine tune), FM from B to A, pulse width, sub-oscillator, noise. |
 | **Filter** | 24 dB ladder or 12 dB low-pass/band-pass/high-pass, drive, key tracking, **Pick Dynamics** (picking harder opens the filter, like an auto-wah), filter envelope. |
 | **Amp & LFO** | Amp envelope, velocity and **Patch Level** (the preset's own volume, applied after the effects). LFO with fade-in for vibrato, filter, pulse width and tremolo. |
@@ -100,8 +100,7 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 
 **Knobs:** drag up or down, hold ⇧ for fine control, double-click to reset.
 **Shortcuts:** ⌘] / ⌘[ next/previous preset, ⌘R starts/stops audio,
-⌘. silences everything (panic), ⇧⌘R records your input, ⌘, opens Audio
-Settings.
+⌘. silences everything (panic), ⌘, opens Audio Settings.
 
 The top bar shows the hardware round-trip latency, the DSP load (the share of
 the real-time budget the audio engine uses), dropouts (*XRUNS*) and active
@@ -138,30 +137,14 @@ impressions, not samples.
 
 ## Getting the lowest latency
 
-1. **Use an audio interface, not the Mac's built-in microphone and speakers.**
-   On a MacBook the built-in microphone and speakers alone add about 60 ms of
-   delay (shown under *LATENCY*), several times more than the note detection.
-   They also let the synth's sound leak from the speakers back into the
-   microphone. With a guitar plugged into an interface, the round trip is
-   typically 5–10 ms. Use headphones or monitors so the sound doesn't reach
-   the pickups or microphone.
-2. **Use one device for input and output.** The app then runs input and output
+1. **Use one device for input and output.** The app then runs input and output
    in a single callback with no extra buffering. Two separate devices work too,
    bridged by a small safety buffer; if you must use two, combine them into an
    *Aggregate Device* in Audio MIDI Setup.
-3. **Buffer size 32–64 samples.** If the *XRUNS* counter keeps climbing, go up
+2. **Buffer size 32–64 samples.** If the *XRUNS* counter keeps climbing, go up
    one step.
-4. **48 kHz** is the sweet spot. Higher rates shorten buffers but cost more CPU.
-5. **Turn off your interface's direct monitoring of the guitar**, or you hear
-   the dry guitar next to the synth. The app only plays the guitar itself if you
-   turn up **Dry Guitar** (off by default). On a Universal Audio Apollo, press
-   **Mute** on the guitar's channel strip in Console, or pull its fader all the
-   way down: that removes it from the main monitor mix (monitors *and*
-   headphones) while the app still receives it. Muting it only in a
-   headphone cue mix leaves it on the monitors. Other interfaces have a
-   *Direct Monitor* knob or switch, or a mixer app (RME TotalMix, MOTU,
-   Focusrite Control) where you turn the input down in the output mix.
-6. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
+3. **48 kHz** is the sweet spot. Higher rates shorten buffers but cost more CPU.
+4. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
    to the lowest note you actually play. A higher lowest note means faster
    detection and less CPU.
 
@@ -185,57 +168,11 @@ first of the six channels on the *Input & Tracking* tab.
 
 A pitch can't be known until about one to two cycles of the string's vibration
 have arrived. GuitarSynthX starts analysing right after the pick attack, using
-only post-attack audio, with a window that grows as audio comes in. A single,
-very clean reading is accepted straight away; otherwise two matching readings
-confirm the note. High notes lock in within a few milliseconds; the low E
-string (82 Hz) takes about 20–25 ms. On the synthetic test set at 48 kHz,
-45 of 45 notes were detected correctly, on average about 12 ms after the pick.
-Your audio interface's own latency comes on top of that.
-
-### Stopping notes
-
-**Note Off** (*Input & Tracking* tab, *Note Behaviour*) sets how a note ends:
-
-| Note Off | A note ends when… | After muting a string |
-|---|---|---|
-| **Gate only** | the input falls below the **Gate** (as in 1.1) | about 150 ms; a note can hang if noise or a leaked sound stays above the gate |
-| **Normal** (default) | the string's level suddenly drops 18 dB and stays down, or no pitch is left once the note has faded 45 dB, or the gate closes | about 25 ms on the high strings, 40 ms on the low E |
-| **Fast** | the same, with a 14 dB drop and shorter checks | about 15 ms (high) to 25 ms (low E); also ends notes that hang on in Normal because a faint tone stays on the string |
-
-The level drop is measured against the note's level *after* the pick attack
-has settled, so a loud attack that falls back to a quieter sustain doesn't end
-the note. If notes still stop too early with your guitar, choose **Gate only**;
-if they hang after you mute, try **Fast**.
-
-In Normal and Fast, after a note has ended only a new pick starts the next one,
-so leftover hum or sound leaking back from the speakers can't restart it. What
-you hear after the note ends is the preset's own release and its delay/reverb
-tail. For a tighter stop, shorten **Release** on the *Amp & LFO* tab.
-
-### Recording your input
-
-**Audio → Record Input…** (⇧⌘R) records exactly what the pitch tracker hears
-(the selected input channel after Input Gain; all six channels in Hex mode),
-for up to 5 minutes. A red **REC** counter appears in the tuner bar; click it
-or press ⇧⌘R again to stop. The recording is saved as a 32-bit WAV file in
-`~/Music/GuitarSynthX Recordings`, with a text file of the app's settings next
-to it, and Finder opens on it. Send both files along with a bug report about
-note detection: the engine tests can replay them exactly.
-
-### Fast playing
-
-Each pick is detected from its burst of high-frequency pick noise, compared
-with the previous few milliseconds rather than the previous note. A softer
-pick still counts as a new note when it brings a clearly different pitch. In
-tests with 16th notes at 150–180 BPM on one string, 45–47 of 48 notes
-retriggered correctly. Hammer-ons, pull-offs and slides without a pick still
-change the pitch legato, without a new attack.
-
-Letting the previous string ring while you pick the next one (fast runs across
-strings) means two notes sound at once. In Mono mode that is polyphony again,
-and the tracker can pick the wrong one of the two. Muting the previous string
-with the picking hand (as for clean single-note playing anyway) or a hex pickup
-avoids this.
+only post-attack audio, with a window that grows as audio comes in. High notes
+lock in within a few milliseconds; the low E string (82 Hz) takes about
+20–25 ms. On the synthetic test set at 48 kHz, 45 of 45 notes were detected
+correctly, on average about 12 ms after the pick. Your audio interface's own
+latency comes on top of that.
 
 ## Building from source
 
@@ -277,12 +214,7 @@ open Package.swift                   # in Xcode: GuitarSynthX scheme, Release, �
 ```bash
 ./Tests/run_tests.sh              # engine: pitch tracking, effects, safety, CPU
 python3 Tests/check_presets.py    # every factory preset: valid, safe, level-matched
-./Tests/replay.sh "Input ….wav"   # replay a recording from Audio > Record Input
 ```
-
-`replay.sh` applies the settings saved next to the recording (add
-`key=value` arguments to override, e.g. `trk.release=0`) and prints every
-note start and end it detects.
 
 The engine tests need no audio hardware, so they also run on Linux. They play
 synthetic plucked strings (E2–C6 at 44.1, 48 and 96 kHz) into the pitch
@@ -291,11 +223,6 @@ tracker, and check:
 * note accuracy and detection time
 * legato slides, and re-picks over a still-ringing note
 * that long notes don't retrigger by themselves
-* how fast a muted note ends in each Note Off mode, with silence, background
-  noise or a leaked tone after the mute
-* that sustained notes with a loud attack, deep level beating, vibrato and hum
-  are not cut short
-* fast 16th-note sequences at 150 and 180 BPM, on one string and across two
 * delay timing with tempo sync, and ducking
 * reverb tails decaying at every type and shimmer setting
 * NaN/overflow safety at extreme settings
@@ -362,9 +289,7 @@ your speakers.
 ## Notes and limitations
 
 * **Single notes on a normal guitar input.** Chords need a hexaphonic pickup
-  and **Hex** input mode (see [Playing chords](#playing-chords)). The same
-  applies to fast runs where the previous string keeps ringing (see
-  [Fast playing](#fast-playing)).
+  and **Hex** input mode (see [Playing chords](#playing-chords)).
 * **Not notarized.** Releases are signed ad-hoc, so macOS shows a warning on
   first launch (see [Download & install](#download--install)). Removing it
   requires signing with an Apple Developer ID and notarizing.

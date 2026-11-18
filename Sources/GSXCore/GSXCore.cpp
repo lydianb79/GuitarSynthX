@@ -2,9 +2,7 @@
 #include "include/GSXCore.h"
 #include "Engine.hpp"
 #include "AudioIO.hpp"
-#include <algorithm>
 #include <complex>
-#include <cstring>
 #include <cstdio>
 #include <mutex>
 #include <string>
@@ -74,7 +72,6 @@ int32_t gsx_start(const GSXAudioConfig* config, char* errBuf, int32_t errLen) {
     std::lock_guard<std::mutex> lock(controlMutex());
     if (!config) return 0;
     std::string err;
-    engine().recordStop();   // a recording never spans two sample rates / devices
     const bool ok = io().start(*config, engine(), err);
     if (!ok && errBuf && errLen > 0) copyStr(errBuf, static_cast<size_t>(errLen), err.c_str());
     return ok ? 1 : 0;
@@ -190,25 +187,6 @@ int32_t gsx_read_visual(float* scope, int32_t scopeCount, float* spectrum, int32
         }
     }
     return 1;
-}
-
-
-int32_t gsx_record_start(double maxSeconds) { return engine().recordStart(maxSeconds); }
-int32_t gsx_record_stop(void) { return engine().recordStop(); }
-int32_t gsx_record_active(void) { return engine().recording() ? 1 : 0; }
-double  gsx_record_seconds(void) {
-    Engine& e = engine();
-    return e.sampleRate() > 0 ? e.recordFrames() / e.sampleRate() : 0.0;
-}
-int32_t gsx_record_copy(float* dst, int32_t maxSamples, int32_t* channels, double* sampleRate) {
-    Engine& e = engine();
-    if (e.recording()) return 0;
-    const int64_t total = static_cast<int64_t>(e.recordFrames()) * e.recordChannels();
-    const int32_t n = static_cast<int32_t>(std::min<int64_t>(total, std::max(0, maxSamples)));
-    if (dst && n > 0) std::memcpy(dst, e.recordData(), sizeof(float) * static_cast<size_t>(n));
-    if (channels) *channels = e.recordChannels();
-    if (sampleRate) *sampleRate = e.sampleRate();
-    return n;
 }
 
 } // extern "C"

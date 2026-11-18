@@ -40,9 +40,6 @@ final class SynthController: ObservableObject {
     @Published var currentPresetName: String = "Init"
     /// Preset.id ("Category/Name") of the loaded preset; "" after Init.
     @Published private(set) var currentPresetID: String = ""
-    /// The input recorder is running (see InputRecorder.swift).
-    @Published var recording = false
-    var recordingStarted = Date()
 
     private let defaults = UserDefaults.standard
     private var saveWork: DispatchWorkItem?
@@ -128,7 +125,6 @@ final class SynthController: ObservableObject {
     // MARK: - Engine lifecycle
 
     func start() {
-        if recording { stopRecording() }
         gsx_stop()
         var cfg = GSXAudioConfig(inputDeviceID: inputDeviceID, outputDeviceID: outputDeviceID,
                                  sampleRate: sampleRate, bufferFrames: Int32(bufferFrames))
@@ -144,7 +140,6 @@ final class SynthController: ObservableObject {
     }
 
     func stop() {
-        if recording { stopRecording() }
         gsx_stop()
         running = false
     }
@@ -286,8 +281,6 @@ final class SynthController: ObservableObject {
 final class StatusModel: ObservableObject {
     @Published private(set) var status = GSXStatus()
     @Published private(set) var trackers: [GSXTrackerStatus] = Array(repeating: GSXTrackerStatus(), count: 6)
-    /// Seconds recorded so far while the input recorder runs, nil otherwise.
-    @Published private(set) var recordSeconds: Double?
     private var timer: Timer?
 
     func startPolling() {
@@ -308,8 +301,6 @@ final class StatusModel: ObservableObject {
         }
         status = s
         trackers = tr
-        let rec: Double? = gsx_record_active() != 0 ? gsx_record_seconds() : nil
-        if rec.map({ Int($0) }) != recordSeconds.map({ Int($0) }) { recordSeconds = rec }
     }
 }
 

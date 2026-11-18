@@ -75,7 +75,6 @@ void Engine::updateParams() {
     tset_.hopMs = kHops[static_cast<int>(clampf(P(P_TRK_HOP), 0, 2))];
     tset_.gateDb = P(P_IN_GATE);
     tset_.retrigger = P(P_TRK_RETRIGGER) > 0.5f;
-    tset_.releaseMode = static_cast<int>(std::lround(P(P_TRK_RELEASE)));
     for (int t = 0; t < kMaxTrackers; ++t) {
         trackers_[t].setSettings(tset_);
         trackers_[t].setHopPhase(static_cast<float>(t) / kMaxTrackers);
@@ -243,8 +242,6 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
 
     float inPeak = 0.0f;
     const int chans = in ? std::min(numIn, numIn_) : 0;
-    recBusy_.store(true);                    // seq_cst: pairs with recordStop()
-    const bool rec = recOn_.load();
     for (int off = 0; off < frames; off += kSubBlock) {
         const int n = std::min(kSubBlock, frames - off);
         // ---- gather input
@@ -270,14 +267,6 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
                 inPeak = std::max(inPeak, std::fabs(s));
             }
         }
-        // ---- record what the trackers hear
-        if (rec) {
-            const int m = std::min(n, recCap_ - recPos_);
-            for (int i = 0; i < m; ++i)
-                for (int c = 0; c < recCh_; ++c)
-                    rec_[static_cast<size_t>(recPos_ + i) * recCh_ + c] = c < numTrackers_ ? trkBuf_[c][i] : 0.0f;
-            recPos_ += m;
-        }
         // ---- analysis -> note events
         for (int t = 0; t < numTrackers_; ++t) trackers_[t].process(trkBuf_[t], n);
         handleNotes();
@@ -286,8 +275,6 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
         ++stamp_;
         for (auto& v : voices_) if (v.active()) v.render(outL + off, outR + off, n, vp_, lfo, stamp_);
     }
-    if (rec) recLen_.store(recPos_, std::memory_order_release);
-    recBusy_.store(false, std::memory_order_release);
 
     // ---- synth/dry mix with gain ramps
     {
@@ -387,27 +374,6 @@ void Engine::readScope(float* dst, int n) const {
     n = std::min(n, kScopeSize);
     const uint32_t w = scopeW_.load(std::memory_order_acquire);
     for (int i = 0; i < n; ++i) dst[i] = scope_[(w - static_cast<uint32_t>(n) + static_cast<uint32_t>(i)) & (kScopeSize - 1)];
-}
-
-} // namespace gsx
-
-namespace gsx {
-
-int Engine::recordStart(double maxSeconds) {
-    if (recOn_.load()) return recCh_;
-    recCh_ = getParam(P_IN_MODE) > 0.5f ? kMaxTrackers : 1;
-    recCap_ = static_cast<int>(std::clamp(maxSeconds, 1.0, 600.0) * fs_);
-    rec_.assign(static_cast<size_t>(recCap_) * recCh_, 0.0f);
-    recPos_ = 0;
-    recLen_.store(0);
-    recOn_.store(true);
-    return recCh_;
-}
-
-int Engine::recordStop() {
-    recOn_.store(false);
-    while (recBusy_.load()) { }             // at most one audio block
-    return recLen_.load();
 }
 
 } // namespace gsx

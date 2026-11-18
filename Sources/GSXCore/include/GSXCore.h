@@ -117,16 +117,6 @@ int32_t gsx_get_tracker(int32_t index, GSXTrackerStatus* out);
 /// Safe to call from the UI thread. Returns 1 if data was produced.
 int32_t gsx_read_visual(float* scope, int32_t scopeCount, float* spectrum, int32_t bins);
 
-/// Input recorder: captures what the pitch trackers hear (after input gain),
-/// 1 channel in mono mode, 6 in hex mode, at the current sample rate.
-/// Start returns the channel count; stop returns the recorded frames.
-int32_t gsx_record_start(double maxSeconds);
-int32_t gsx_record_stop(void);
-int32_t gsx_record_active(void);
-double  gsx_record_seconds(void);
-/// After stop: copies up to maxSamples interleaved samples; returns samples copied.
-int32_t gsx_record_copy(float* dst, int32_t maxSamples, int32_t* channels, double* sampleRate);
-
 #ifdef __cplusplus
 }
 #endif
