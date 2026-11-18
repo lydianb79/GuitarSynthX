@@ -12,7 +12,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/screenshot.png" width="900" alt="GuitarSynthX playing the Screaming Lead preset: the tuner shows G#2, with the oscilloscope and spectrum of the synth output above the oscillator controls and the preset list on the left">
+  <img src="docs/screenshot.png" width="900" alt="GuitarSynthX playing the Screaming Lead preset: the tuner bar shows A2 at 109.7 Hz with the gate open, above the oscilloscope and spectrum of the synth output; the preset list is on the left and the oscillator controls below">
 </p>
 
 ---
@@ -105,6 +105,12 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 The top bar shows the hardware round-trip latency, the DSP load (the share of
 the real-time budget the audio engine uses), dropouts (*XRUNS*) and active
 voices.
+
+The **tuner bar** above the visualizer shows the note being detected, its
+frequency and how many cents sharp or flat it is, whether the input gate is
+open (with the input level), and the loaded preset. In Hex mode it shows one
+box per string. Below it, the visualizer draws the oscilloscope and spectrum
+of the synth output.
 
 ## Presets
 

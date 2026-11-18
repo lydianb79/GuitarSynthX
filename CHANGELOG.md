@@ -12,6 +12,9 @@ version being released into the GitHub release notes.
   waveform. The layout stays put as notes change, and in Hex mode the six
   strings appear in the same bar.
 
+### Documentation
+- New README screenshot showing the tuner bar.
+
 ## [1.1.1] - 2026-11-18
 
 ### Fixed
