@@ -4,6 +4,15 @@ All notable changes to GuitarSynthX. Versions follow `CFBundleShortVersionString
 in `Packaging/Info.plist`; `Packaging/make_release.sh` copies the section for the
 version being released into the GitHub release notes.
 
+## [1.1.1] - 2026-11-18
+
+### Fixed
+- After updating from 1.0.x, the loaded preset wasn't highlighted in the
+  preset list and its category didn't open. The app now finds it by name.
+
+### Documentation
+- Screenshot in the README.
+
 ## [1.1.0] - 2026-11-18
 
 ### Added

@@ -249,7 +249,10 @@ final class SynthController: ObservableObject {
             apply(first)
         }
         currentPresetName = defaults.string(forKey: "presetName") ?? currentPresetName
-        currentPresetID = defaults.string(forKey: "presetID") ?? currentPresetID
+        // 1.0.x stored only the preset name: find the factory preset it refers to.
+        currentPresetID = defaults.string(forKey: "presetID")
+            ?? FactoryPresets.all.first(where: { $0.name == currentPresetName })?.id
+            ?? currentPresetID
     }
 
     private func saveAudioConfig() {

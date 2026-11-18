@@ -70,6 +70,8 @@ done
 # ---- release notes
 NOTES="dist/RELEASE_NOTES-${TAG}.md"
 {
+  echo "![GuitarSynthX](https://raw.githubusercontent.com/${REPO}/main/docs/screenshot.png)"
+  echo
   echo "## What's new in ${VERSION}"
   echo "${CHANGES}"
   echo

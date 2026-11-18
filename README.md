@@ -11,6 +11,10 @@
   · macOS 13+ · Apple Silicon & Intel · <a href="CHANGELOG.md">What's new</a>
 </p>
 
+<p align="center">
+  <img src="docs/screenshot.png" width="900" alt="GuitarSynthX playing the Screaming Lead preset: the tuner shows G#2, with the oscilloscope and spectrum of the synth output above the oscillator controls and the preset list on the left">
+</p>
+
 ---
 
 * **Plays what you play.** Low-latency pitch tracking follows your picking,
