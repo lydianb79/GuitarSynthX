@@ -75,6 +75,7 @@ private:
     float inGain_ = 1.0f;
     float synthGain_ = 0.5f, dryGain_ = 0, masterGain_ = 1;
     float synthGainS_ = 0.5f, dryGainS_ = 0, masterGainS_ = 1;
+    float patchLevel_ = 1, patchLevelS_ = 1;   // per-preset output trim, applied after the effects
     bool drvOn_ = false, choOn_ = false, phaOn_ = false, dlyOn_ = false, revOn_ = false, limOn_ = true, dryFx_ = true;
 
     // LFO

@@ -18,7 +18,7 @@
 * **Real synth, real effects.** Unison oscillators, FM, ladder and
   state-variable filters, envelopes and an LFO, followed by drive, chorus,
   phaser, delay (digital, tape and analog) and reverb (room, hall, plate,
-  shimmer). 20 factory presets, plus your own.
+  shimmer). 70 factory presets in 12 categories, all level-matched, plus your own.
 * **Built for playing live.** A C++ engine on Core Audio with buffer sizes down
   to 16 samples, and a Metal-rendered oscilloscope, spectrum and tuner.
 * **Polyphonic with a hex pickup.** A normal guitar input tracks single notes.
@@ -30,6 +30,7 @@
 - [Download & install](#download--install)
 - [Quick start](#quick-start)
 - [Using it](#using-it)
+- [Presets](#presets)
 - [Getting the lowest latency](#getting-the-lowest-latency)
 - [Building from source](#building-from-source)
 - [Making a release](#making-a-release)
@@ -82,23 +83,46 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 
 | Area | What it does |
 |---|---|
-| **Presets** (left) | 20 factory sounds in five groups: **Lead** (Fat Saw Lead, Square Lead, Screaming Lead, Glide Saw, Ambient Lead, Bend Sine, Chiptune), **Bass** (Synth, Acid, Sub), **Pad** (Warm Pad, Shimmer Pad, String Ensemble, Hollow Pulse Pad), **Keys** (FM Bell, Electric Piano, Organ) and **FX** (Talking Wah, Noise Sweep, Space Echo Pluck). **Save** stores your own in `~/Library/Application Support/GuitarSynthX/Presets`. Loading a preset changes only the sound; your input, gate and tracking settings stay as they are. |
+| **Presets** (left) | 70 factory sounds in 12 categories (see [Presets](#presets)). Search by name or category, click a category to open or close it, step through sounds with ◀ ▶ or ⌘[ / ⌘]. **Save** stores your own under *User* (in `~/Library/Application Support/GuitarSynthX/Presets`). Loading a preset changes only the sound; your input, gate and tracking settings stay as they are. |
 | **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Dynamics** makes the synth volume follow your playing. |
 | **Oscillators** | Osc A (up to 7-voice unison), Osc B (semitones/fine tune), FM from B to A, pulse width, sub-oscillator, noise. |
 | **Filter** | 24 dB ladder or 12 dB low-pass/band-pass/high-pass, drive, key tracking, **Pick Dynamics** (picking harder opens the filter, like an auto-wah), filter envelope. |
-| **Amp & LFO** | Amp envelope and velocity. LFO with fade-in for vibrato, filter, pulse width and tremolo. |
+| **Amp & LFO** | Amp envelope, velocity and **Patch Level** (the preset's own volume, applied after the effects). LFO with fade-in for vibrato, filter, pulse width and tremolo. |
 | **Effects** | Drive → Chorus → Phaser → Delay → Reverb, then the limiter. |
 | **Delay** | *Digital*, *Tape* (wow, flutter, warm saturated repeats) or *Analog* (dark repeats like a vintage pedal). Free time or **tempo sync** (1/2, 1/4, 1/4 T, 1/8 dotted, 1/8, 1/8 T, 1/16 at any BPM). Feedback, mix, low cut, high cut, modulation, ping-pong, and **ducking** (echoes drop back while you play and swell in when you stop). |
 | **Reverb** | *Room*, *Hall* or *Plate*. Size, decay up to 20 s, pre-delay, low cut, high cut, modulation, width, ducking, and **Shimmer** (an octave-up shine that climbs with every repeat). |
 | **Master** (right) | Synth level, **Dry Guitar** blend, master volume, limiter, **Dry > FX** (whether your clean guitar also goes through the effects), input and output meters. |
 
 **Knobs:** drag up or down, hold ⇧ for fine control, double-click to reset.
-**Shortcuts:** ⌘R starts/stops audio, ⌘. silences everything (panic),
-⌘, opens Audio Settings.
+**Shortcuts:** ⌘] / ⌘[ next/previous preset, ⌘R starts/stops audio,
+⌘. silences everything (panic), ⌘, opens Audio Settings.
 
 The top bar shows the hardware round-trip latency, the DSP load (the share of
 the real-time budget the audio engine uses), dropouts (*XRUNS*) and active
 voices.
+
+## Presets
+
+| Category | Sounds |
+|---|---|
+| **Lead** (13) | Ambient Lead, Bend Sine (Track), Classic Mono Lead, Fat Saw Lead, Fifth Lead, Glide Saw, Overdrive Lead, Prog Lead, Screaming Lead, Soft Sine Lead, Square Lead, Supersaw Lead, Whistle Lead |
+| **Bass** (9) | Acid Bass, FM Bass, Ladder Bass, Pluck Bass, Reese Bass, Square Bass, Sub Bass, Synth Bass, Wobble Bass |
+| **Pad** (7) | Airy Pad, Analog Pad, Dark Pad, Glass Pad, Hollow Pulse Pad, Sweep Pad, Warm Pad |
+| **Strings** (5) | Cello Section, Pizzicato, Slow Strings, Solo Violin, String Ensemble |
+| **Brass** (4) | Brass Stabs, Soft Horns, Synth Brass, Trumpet Lead |
+| **Keys** (5) | Clav, Electric Piano, Harpsichord, Synth Piano, Tine Piano |
+| **Organ** (4) | Church Organ, Organ, Reed Organ, Rock Organ |
+| **Pluck** (5) | Digital Pluck, Harp, Kalimba, Koto, Space Echo Pluck |
+| **Bells & Mallets** (6) | FM Bell, Glockenspiel, Marimba, Steel Drum, Tubular Bells, Vibraphone |
+| **Ambient** (4) | Drone Field, Frozen Shimmer, Shimmer Pad, Underwater |
+| **FX** (5) | Metallic, Noise Sweep, Robot Voice, Sample & Hold, Talking Wah |
+| **Retro** (3) | 80s Poly, Chiptune, Synthwave Lead |
+
+All factory presets are **level-matched**: each one's Patch Level is set so it
+plays at the same loudness (−26 LUFS on a standard guitar test phrase, measured
+through the real engine), so switching sounds doesn't change your volume.
+Single-note instrument names (Violin, Trumpet and so on) are synth
+impressions, not samples.
 
 ## Getting the lowest latency
 
@@ -161,7 +185,8 @@ open Package.swift                   # in Xcode: GuitarSynthX scheme, Release, �
 ### Tests
 
 ```bash
-./Tests/run_tests.sh
+./Tests/run_tests.sh              # engine: pitch tracking, effects, safety, CPU
+python3 Tests/check_presets.py    # every factory preset: valid, safe, level-matched
 ```
 
 The engine tests need no audio hardware, so they also run on Linux. They play
@@ -175,6 +200,11 @@ tracker, and check:
 * reverb tails decaying at every type and shimmer setting
 * NaN/overflow safety at extreme settings
 * CPU load in mono and hex mode
+
+`check_presets.py` validates every factory preset against the engine's
+parameter table, plays each one through the engine, and fails if a preset
+clips, goes silent or drifts more than 1 dB from the target loudness.
+`--suggest` prints the Patch Level that would fix a preset you've edited.
 
 ## Making a release
 
@@ -220,7 +250,7 @@ Packaging/
   build_app.sh             builds the per-architecture apps
   Info.plist, *.entitlements
   Icon/                    AppIcon.svg (source), AppIcon-1024.png, AppIcon.icns
-Tests/                     engine tests and benchmark
+Tests/                     engine tests, benchmark, preset checker
 ```
 
 Rules on the audio thread: no memory allocation, no locks, no Swift or

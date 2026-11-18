@@ -20,6 +20,14 @@ struct GuitarSynthXApp: App {
         .windowStyle(.hiddenTitleBar)
         .commands {
             CommandGroup(replacing: .newItem) {}
+            CommandMenu("Presets") {
+                Button("Next Preset") { synth.stepPreset(1) }
+                    .keyboardShortcut("]", modifiers: [.command])
+                Button("Previous Preset") { synth.stepPreset(-1) }
+                    .keyboardShortcut("[", modifiers: [.command])
+                Divider()
+                Button("Init Sound") { synth.initPatch() }
+            }
             CommandMenu("Audio") {
                 Button(synth.running ? "Stop Audio" : "Start Audio") { synth.toggleRunning() }
                     .keyboardShortcut("r", modifiers: [.command])

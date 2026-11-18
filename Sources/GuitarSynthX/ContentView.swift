@@ -252,7 +252,7 @@ struct PanelView: View {
                     card("Filter", keys: ["flt.type", "flt.cutoff", "flt.res", "flt.drive", "flt.keytrack", "flt.dyn"])
                     card("Filter Envelope", keys: ["flt.envamt", "fenv.a", "fenv.d", "fenv.s", "fenv.r"], tint: Theme.accent2)
                 case .amp:
-                    card("Amp Envelope", keys: ["aenv.a", "aenv.d", "aenv.s", "aenv.r", "amp.vel"])
+                    card("Amp Envelope", keys: ["aenv.a", "aenv.d", "aenv.s", "aenv.r", "amp.vel", "amp.level"])
                     card("LFO", keys: ["lfo.wave", "lfo.rate", "lfo.delay", "lfo.pitch", "lfo.filter", "lfo.pw", "lfo.amp"], tint: Theme.accent2)
                 case .fx:
                     card("Drive", toggle: "drv.on", keys: ["drv.amount", "drv.tone", "drv.mix"], tint: Theme.warn)
@@ -373,44 +373,100 @@ struct MasterStrip: View {
 
 struct PresetSidebar: View {
     @EnvironmentObject var synth: SynthController
+    @State private var query = ""
+    @State private var expanded: Set<String> = []
     @State private var newName = ""
     @State private var showSave = false
 
+    private var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+
     var body: some View {
+        let groups = synth.presetGroups(matching: query)
         VStack(spacing: 0) {
             HStack {
                 Text("GuitarSynth").font(.system(size: 15, weight: .heavy, design: .rounded))
                 Text("X").font(.system(size: 15, weight: .heavy, design: .rounded)).foregroundColor(Theme.accent)
                 Spacer()
+                Text("\(synth.allPresets.count)")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .foregroundColor(Theme.text2)
+                    .help("Number of presets")
             }
             .padding(.horizontal, 14)
             .frame(height: 50)
             .background(Theme.panel)
 
-            List {
-                ForEach(categories, id: \.self) { cat in
-                    Section(cat) {
-                        ForEach(synth.allPresets.filter { $0.category == cat }) { preset in
-                            PresetRow(preset: preset, selected: preset.name == synth.currentPresetName)
-                                .contentShape(Rectangle())
-                                .onTapGesture { synth.apply(preset) }
-                                .contextMenu {
-                                    if !preset.isFactory { Button("Delete", role: .destructive) { synth.delete(preset) } }
-                                }
-                        }
-                    }
+            // search
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundColor(Theme.text2)
+                TextField("Search presets", text: $query)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if searching {
+                    Button { query = "" } label: { Image(systemName: "xmark.circle.fill") }
+                        .buttonStyle(.plain)
+                        .foregroundColor(Theme.text2)
+                        .help("Clear search")
                 }
             }
-            .listStyle(.sidebar)
-            .scrollContentBackground(.hidden)
+            .padding(.horizontal, 8).padding(.vertical, 6)
+            .background(RoundedRectangle(cornerRadius: 7).fill(Color.white.opacity(0.06)))
+            .padding(.horizontal, 10).padding(.vertical, 8)
 
-            HStack {
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(groups) { group in
+                        DisclosureGroup(isExpanded: expandedBinding(group.name)) {
+                            ForEach(group.presets) { preset in
+                                PresetRow(preset: preset, selected: preset.id == synth.currentPresetID)
+                                    .id(preset.id)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture { synth.apply(preset) }
+                                    .contextMenu {
+                                        if !preset.isFactory {
+                                            Button("Delete", role: .destructive) { synth.delete(preset) }
+                                        }
+                                    }
+                            }
+                        } label: {
+                            HStack {
+                                Text(group.name)
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white.opacity(0.85))
+                                Spacer()
+                                Text("\(group.presets.count)")
+                                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                                    .foregroundColor(Theme.text2)
+                            }
+                            .contentShape(Rectangle())
+                            .onTapGesture { toggle(group.name) }
+                        }
+                    }
+                    if groups.isEmpty {
+                        Text("No presets match “\(query)”")
+                            .font(.system(size: 11))
+                            .foregroundColor(Theme.text2)
+                    }
+                }
+                .listStyle(.sidebar)
+                .scrollContentBackground(.hidden)
+                .onAppear { reveal(synth.currentPresetID, proxy: proxy, animated: false) }
+                .onChange(of: synth.currentPresetID) { id in reveal(id, proxy: proxy, animated: true) }
+            }
+
+            HStack(spacing: 6) {
                 Button("Init") { synth.initPatch() }
+                    .help("Reset all sound settings to their defaults")
                 Spacer()
+                Button { synth.stepPreset(-1) } label: { Image(systemName: "chevron.left") }
+                    .help("Previous preset (⌘[)")
+                Button { synth.stepPreset(1) } label: { Image(systemName: "chevron.right") }
+                    .help("Next preset (⌘])")
                 Button {
                     newName = synth.currentPresetName == "Init" ? "My Sound" : synth.currentPresetName + " 2"
                     showSave = true
                 } label: { Label("Save", systemImage: "square.and.arrow.down") }
+                    .help("Save the current sound as a user preset")
             }
             .padding(10)
         }
@@ -422,10 +478,32 @@ struct PresetSidebar: View {
         }
     }
 
-    private var categories: [String] {
-        var seen: [String] = []
-        for p in synth.allPresets where !seen.contains(p.category) { seen.append(p.category) }
-        return seen
+    /// While searching every matching category is open; otherwise the user decides.
+    private func expandedBinding(_ category: String) -> Binding<Bool> {
+        Binding(
+            get: { searching || expanded.contains(category) },
+            set: { open in
+                if open { _ = expanded.insert(category) } else { _ = expanded.remove(category) }
+            }
+        )
+    }
+
+    private func toggle(_ category: String) {
+        guard !searching else { return }
+        if expanded.contains(category) { _ = expanded.remove(category) } else { _ = expanded.insert(category) }
+    }
+
+    /// Opens the category of the given preset and scrolls it into view.
+    private func reveal(_ presetID: String, proxy: ScrollViewProxy, animated: Bool) {
+        guard let slash = presetID.firstIndex(of: "/") else { return }
+        _ = expanded.insert(String(presetID[..<slash]))
+        DispatchQueue.main.async {
+            if animated {
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(presetID, anchor: .center) }
+            } else {
+                proxy.scrollTo(presetID, anchor: .center)
+            }
+        }
     }
 }
 

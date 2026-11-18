@@ -35,7 +35,7 @@ void Engine::prepare(double sampleRate, int numInputChannels) {
     delay_.prepare(fs); reverb_.prepare(fs); limiter_.prepare(fs);
     gSeenVersion = 0;
     updateParams();
-    synthGainS_ = synthGain_; dryGainS_ = dryGain_; masterGainS_ = masterGain_;
+    synthGainS_ = synthGain_; dryGainS_ = dryGain_; masterGainS_ = masterGain_; patchLevelS_ = patchLevel_;
     killAll();
     std::memset(scope_, 0, sizeof(scope_));
 }
@@ -108,6 +108,7 @@ void Engine::updateParams() {
     fltProto_.set(P(P_FENV_A), P(P_FENV_D), P(P_FENV_S), P(P_FENV_R), fs);
     ampProto_.set(P(P_AENV_A), P(P_AENV_D), P(P_AENV_S), P(P_AENV_R), fs);
     vp_.velSens = P(P_AMP_VEL);
+    patchLevel_ = dbToLin(P(P_AMP_LEVEL));
     for (auto& v : voices_) if (v.active()) v.setEnvelopes(ampProto_, fltProto_);
 
     lfoWave_ = static_cast<int>(P(P_LFO_WAVE));
@@ -281,10 +282,13 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
         const float sStep = (synthGain_ - synthGainS_) * invN;
         const float dStep = (dryGain_ - dryGainS_) * invN;
         float sg = synthGainS_, dg = dryGainS_;
+        // The patch level is applied after the effects; a dry guitar that runs
+        // through the effects is pre-compensated so its level never changes.
+        const float dryComp = 1.0f / std::max(patchLevel_, 1e-3f);
         for (int i = 0; i < frames; ++i) {
             sg += sStep; dg += dStep;
             dryBuf_[i] *= dg;                       // keep the scaled dry signal
-            const float dryIn = dryFx_ ? dryBuf_[i] : 0.0f;
+            const float dryIn = dryFx_ ? dryBuf_[i] * dryComp : 0.0f;
             outL[i] = outL[i] * sg + dryIn;
             outR[i] = outR[i] * sg + dryIn;
         }
@@ -297,6 +301,14 @@ void Engine::process(const float* const* in, int numIn, float* outL, float* outR
     if (phaOn_) phaser_.process(outL, outR, frames);
     if (dlyOn_) delay_.process(outL, outR, frames);
     if (revOn_) reverb_.process(outL, outR, frames);
+
+    // ---- per-preset level (after effects, so the tone of drive etc. is unchanged)
+    {
+        const float step = (patchLevel_ - patchLevelS_) / static_cast<float>(frames);
+        float g = patchLevelS_;
+        for (int i = 0; i < frames; ++i) { g += step; outL[i] *= g; outR[i] *= g; }
+        patchLevelS_ = patchLevel_;
+    }
 
     // ---- dry guitar that bypasses the effects
     if (!dryFx_) for (int i = 0; i < frames; ++i) { outL[i] += dryBuf_[i]; outR[i] += dryBuf_[i]; }

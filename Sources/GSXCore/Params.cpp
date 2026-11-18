@@ -62,6 +62,7 @@ static const ParamDef kDefs[P_COUNT] = {
     {"aenv.s",         "Sustain",        "Amp",      "",    "",                             0,      1,      0.8f,  C,  LIN},
     {"aenv.r",         "Release",        "Amp",      "ms",  "",                             1,      8000,   250,   C,  LOG},
     {"amp.vel",        "Velocity",       "Amp",      "",    "",                             0,      1,      0.6f,  C,  LIN},
+    {"amp.level",      "Patch Level",    "Amp",      "dB",  "",                             -24,    12,     0,     C,  LIN},
 
     {"lfo.wave",       "LFO Wave",       "LFO",      "",    "Sine|Triangle|Saw|Square|S&H", 0,      4,      0,     CH, LIN},
     {"lfo.rate",       "LFO Rate",       "LFO",      "Hz",  "",                             0.05f,  20,     5,     C,  LOG},

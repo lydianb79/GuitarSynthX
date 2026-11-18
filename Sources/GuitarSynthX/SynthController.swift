@@ -13,6 +13,12 @@ struct AudioDevice: Identifiable, Hashable {
     let isDefaultOutput: Bool
 }
 
+struct PresetGroup: Identifiable {
+    let name: String
+    let presets: [Preset]
+    var id: String { name }
+}
+
 /// Owns the engine lifecycle, the audio configuration, parameters and presets.
 final class SynthController: ObservableObject {
     // devices / configuration
@@ -32,6 +38,8 @@ final class SynthController: ObservableObject {
     // presets
     @Published private(set) var userPresets: [Preset] = []
     @Published var currentPresetName: String = "Init"
+    /// Preset.id ("Category/Name") of the loaded preset; "" after Init.
+    @Published private(set) var currentPresetID: String = ""
 
     private let defaults = UserDefaults.standard
     private var saveWork: DispatchWorkItem?
@@ -144,12 +152,49 @@ final class SynthController: ObservableObject {
 
     var allPresets: [Preset] { FactoryPresets.all + userPresets }
 
+    /// Presets grouped by category in browser order (factory categories first,
+    /// then "User" and anything else), sorted by name within each category.
+    /// `query` filters by preset or category name.
+    func presetGroups(matching query: String = "") -> [PresetGroup] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let matches = allPresets.filter {
+            q.isEmpty || $0.name.lowercased().contains(q) || $0.category.lowercased().contains(q)
+        }
+        var order = FactoryPresets.categoryOrder
+        for p in matches where !order.contains(p.category) { order.append(p.category) }
+        return order.compactMap { cat in
+            let items = matches.filter { $0.category == cat }
+                .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+            return items.isEmpty ? nil : PresetGroup(name: cat, presets: items)
+        }
+    }
+
+    /// Every preset in browser order, used for previous/next stepping.
+    var orderedPresets: [Preset] { presetGroups().flatMap { $0.presets } }
+
+    /// Loads the preset `delta` steps away from the current one (wraps around).
+    func stepPreset(_ delta: Int) {
+        let list = orderedPresets
+        guard !list.isEmpty else { return }
+        let index = list.firstIndex { $0.id == currentPresetID }
+            ?? list.firstIndex { $0.name == currentPresetName }
+        let next: Int
+        if let i = index {
+            next = ((i + delta) % list.count + list.count) % list.count
+        } else {
+            next = delta >= 0 ? 0 : list.count - 1
+        }
+        apply(list[next])
+    }
+
     func apply(_ preset: Preset) {
         for p in params where isSoundParam(p.key) {
             p.set(preset.values[p.key] ?? p.defaultValue)
         }
         currentPresetName = preset.name
+        currentPresetID = preset.category.isEmpty ? "" : preset.id
         defaults.set(preset.name, forKey: "presetName")
+        defaults.set(currentPresetID, forKey: "presetID")
     }
 
     func initPatch() {
@@ -164,6 +209,9 @@ final class SynthController: ObservableObject {
             try PresetStore.save(preset)
             userPresets = PresetStore.loadUser()
             currentPresetName = name
+            currentPresetID = preset.id
+            defaults.set(name, forKey: "presetName")
+            defaults.set(preset.id, forKey: "presetID")
         } catch {
             errorMessage = "Could not save preset: \(error.localizedDescription)"
         }
@@ -172,6 +220,10 @@ final class SynthController: ObservableObject {
     func delete(_ preset: Preset) {
         guard !preset.isFactory else { return }
         PresetStore.delete(preset)
+        if preset.id == currentPresetID {
+            currentPresetID = ""
+            defaults.set("", forKey: "presetID")
+        }
         userPresets = PresetStore.loadUser()
     }
 
@@ -193,10 +245,11 @@ final class SynthController: ObservableObject {
     private func restoreState() {
         if let dict = defaults.dictionary(forKey: "paramState") as? [String: Float] {
             for p in params { if let v = dict[p.key] { p.set(v) } }
-        } else if let first = FactoryPresets.all.first {
+        } else if let first = FactoryPresets.all.first(where: { $0.name == "Fat Saw Lead" }) ?? FactoryPresets.all.first {
             apply(first)
         }
         currentPresetName = defaults.string(forKey: "presetName") ?? currentPresetName
+        currentPresetID = defaults.string(forKey: "presetID") ?? currentPresetID
     }
 
     private func saveAudioConfig() {
