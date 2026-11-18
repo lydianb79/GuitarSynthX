@@ -202,8 +202,10 @@ static std::vector<Frame> runTimeline(Engine& eng, const std::vector<float>& in,
     return tl;
 }
 
-static void testNoteOff(double fs) {
-    std::printf("Note-off behaviour fs=%.0f (time from the mute/stop until the tracker releases the note):\n", fs);
+static const char* kReleaseNames[3] = {"Gate only", "Normal", "Fast"};
+
+static void testNoteOff(double fs, int releaseMode) {
+    std::printf("Note-off [%s] fs=%.0f (time from the mute/stop until the tracker releases the note):\n", kReleaseNames[releaseMode], fs);
     const int block = 32;
     const float msPerBlock = 1000.0f * block / (float)fs;
     struct Case { const char* name; int kind; };
@@ -211,7 +213,7 @@ static void testNoteOff(double fs) {
                           {"mute -> leaked tone -40 dBFS", 2}, {"let ring 8 s", 3}};
     for (int note : {40, 52, 64}) {
         for (const auto& c : cases) {
-            Engine eng; eng.prepare(fs, 1);
+            Engine eng; eng.prepare(fs, 1); eng.setParam(P_TRK_RELEASE, (float)releaseMode);
             std::mt19937 rng(21); PluckedString s; s.pluck(midiHz(note), (float)fs, 0.5f, rng);
             Noise nz;
             const int ring = (int)(0.6 * fs);
@@ -243,6 +245,78 @@ static void testNoteOff(double fs) {
                             extraNotes ? "  (+spurious new note)" : "");
         }
     }
+}
+
+// A sustained note that behaves like a real string: a loud attack that settles
+// 12..18 dB lower within ~100 ms, two vibration planes a fraction of a Hz apart
+// (deep, slow level beating), vibrato, a slow decay and some hum and hiss. None of
+// this is a mute, so the note must keep sounding.
+static void testRealSustain(double fs) {
+    std::printf("Sustain realism fs=%.0f (loud attack, beating 5..16 dB, vibrato, hum; no cut in the first 1.2 s):\n", fs);
+    const int block = 32;
+    const float msPerBlock = 1000.0f * block / (float)fs;
+    for (int mode = 0; mode < 3; ++mode) {
+        int cut = 0, total = 0; float earliest = 1e9f;
+        for (int note : {40, 45, 50, 55, 59, 64, 69, 76}) {
+            for (int variant = 0; variant < 3; ++variant) {
+                Engine eng; eng.prepare(fs, 1); eng.setParam(P_TRK_RELEASE, (float)mode);
+                std::mt19937 rng(note * 7 + variant);
+                std::uniform_real_distribution<float> u(0.0f, 1.0f);
+                const int len = (int)(3.2 * fs);
+                std::vector<float> in(len);
+                const float f0 = midiHz(note);
+                const float beatHz = 0.4f + 1.6f * u(rng);            // plane-to-plane detuning
+                const float planeB = 0.3f + 0.42f * u(rng);           // beating 5..16 dB deep
+                const float attackDb = 12.0f + 6.0f * u(rng);
+                const float vibDepth = variant == 2 ? 0.006f : 0.0f;  // ~10 cents
+                float ph[12] = {}, phb[12] = {};
+                for (int i = 0; i < len; ++i) {
+                    const float t = (float)i / (float)fs;
+                    const float env = std::exp(-t * (0.8f + note * 0.02f)) *
+                                      (1.0f + (std::pow(10.0f, attackDb / 20.0f) - 1.0f) * std::exp(-t / 0.035f));
+                    const float vib = 1.0f + vibDepth * std::sin(kTwoPi * 5.5f * t) * std::min(1.0f, t * 2.0f);
+                    float v = 0.0f;
+                    for (int h = 1; h <= 12; ++h) {
+                        const float fh = f0 * h * vib;
+                        if (fh > fs * 0.45f) break;
+                        const float ah = (h == 1 ? 0.5f : 1.0f / h) * std::exp(-t * h * 0.4f) * (1.0f + std::sin(h * 1.7f) * 0.5f);
+                        ph[h - 1] += kTwoPi * fh / (float)fs;
+                        phb[h - 1] += kTwoPi * (fh + beatHz * h) / (float)fs;
+                        v += ah * (std::sin(ph[h - 1]) + planeB * std::sin(phb[h - 1] + h));
+                    }
+                    v *= 0.12f * env;
+                    v += 0.002f * std::sin(kTwoPi * 50.0f * t) + 0.0005f * (u(rng) * 2.0f - 1.0f);
+                    in[i] = v;
+                }
+                auto tl = runTimeline(eng, in, block);
+                int on = -1, off = -1;
+                for (size_t b = 0; b < tl.size(); ++b) {
+                    if (on < 0 && tl[b].active) on = (int)b;
+                    if (on >= 0 && off < 0 && !tl[b].active) off = (int)b;
+                }
+                ++total;
+                if (off >= 0 && (off - on) * msPerBlock < 1200.0f) { ++cut; earliest = std::min(earliest, (off - on) * msPerBlock); }
+            }
+        }
+        std::printf("  %-10s notes cut early %d/%d%s\n", kReleaseNames[mode], cut, total,
+                    cut ? (" (earliest after " + std::to_string((int)earliest) + " ms)").c_str() : "");
+    }
+}
+
+static void testRecorder() {
+    Engine eng; eng.prepare(48000, 1);
+    std::vector<float> x(64), L(64), R(64);
+    const float* ch[1] = {x.data()};
+    eng.recordStart(1.0);
+    int k = 0;
+    for (int b = 0; b < 10; ++b) {
+        for (auto& v : x) v = 0.001f * (float)(k++);
+        eng.process(ch, 1, L.data(), R.data(), 64);
+    }
+    const int frames = eng.recordStop();
+    bool ok = frames == 640 && eng.recordChannels() == 1;
+    for (int i = 0; ok && i < frames; ++i) ok = std::fabs(eng.recordData()[i] - 0.001f * i) < 1e-6f;
+    std::printf("Recorder: %d frames, data %s\n", frames, ok ? "OK" : "WRONG");
 }
 
 static void testFastSequence(double fs) {
@@ -440,7 +514,9 @@ static void testEffects(float fs) {
 
 int main() {
     testEffects(48000.0f);
-    testNoteOff(48000);
+    for (int m = 0; m < 3; ++m) testNoteOff(48000, m);
+    testRealSustain(48000);
+    testRecorder();
     testFastSequence(48000);
     if (std::getenv("GSX_QUICK")) return 0;
     for (double fs : {44100.0, 48000.0, 96000.0}) {

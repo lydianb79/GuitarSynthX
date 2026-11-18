@@ -31,6 +31,7 @@ static const ParamDef kDefs[P_COUNT] = {
     {"trk.transpose",  "Transpose",      "Tracking", "st",  "",                             -24,    24,     0,     I,  LIN},
     {"trk.retrigger",  "Pick Retrigger", "Tracking", "",    "",                             0,      1,      1,     T,  LIN},
     {"trk.dynamics",   "Dynamics",       "Tracking", "",    "",                             0,      1,      0.5f,  C,  LIN},
+    {"trk.release",    "Note Off",       "Tracking", "",    "Gate only|Normal|Fast",        0,      2,      1,     CH, LIN},
 
     {"oscA.wave",      "Osc A Wave",     "Osc",      "",    kWaves,                         0,      4,      2,     CH, LIN},
     {"oscA.octave",    "Osc A Octave",   "Osc",      "oct", "",                             -2,     2,      0,     I,  LIN},

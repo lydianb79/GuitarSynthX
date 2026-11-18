@@ -33,6 +33,11 @@ struct GuitarSynthXApp: App {
                     .keyboardShortcut("r", modifiers: [.command])
                 Button("Panic (All Notes Off)") { synth.panic() }
                     .keyboardShortcut(".", modifiers: [.command])
+                Divider()
+                Button(synth.recording ? "Stop Recording Input" : "Record Input…") { synth.toggleRecording() }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(!synth.running && !synth.recording)
+                Button("Show Recordings in Finder") { synth.revealRecordings() }
             }
         }
     }

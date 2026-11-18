@@ -13,13 +13,21 @@ namespace gsx {
 static constexpr float kOnsetLagFraction = 0.56f;
 // Minimum time after an onset before analysing (skips the pick transient).
 static constexpr float kMinOnsetMs = 1.5f;
-// A note ends when its level falls this far below its recent level (string muted).
-static constexpr float kMuteDropDb = -12.0f;
-// ...or when no clear pitch has been found for this long (only noise left).
-static constexpr float kPitchLossMs = 80.0f;
+// Note Off modes (TrackerSettings::releaseMode):
+//   0 Gate only: a note ends only when the input falls below the gate (1.1 behaviour).
+//   1 Normal:    also when the string level collapses (muted) or the pitch is lost.
+//   2 Fast:      like Normal, but reacts to smaller and shorter drops.
+// A mute is a sudden drop below the level 10..80 ms earlier that stays down;
+// natural decay and level beating are slower and shallower than that. Pitch
+// loss ends a note only once it has decayed far below its peak.
+struct ReleaseTuning { float dropDb; int refNearMs, refFarMs; float holdMs, holdPeriods, armMs, lossMs, lossDb; };
+static const ReleaseTuning kRelease[3] = {
+    {  0.0f,  0,  0,  0.0f, 0.0f,   0.0f,   0.0f,   0.0f },   // unused
+    {-18.0f, 15, 80, 15.0f, 2.0f,  80.0f, 300.0f, -45.0f },
+    {-14.0f, 10, 50,  8.0f, 1.0f,  40.0f, 150.0f, -36.0f },
+};
 // An estimate this much cleaner than the threshold is accepted without confirmation.
 static constexpr float kFastLockAp = 0.25f;
-static const float kMuteDropPow = std::pow(10.0f, kMuteDropDb / 10.0f);   // on mean-square values
 
 void PitchTracker::prepare(double sampleRate) {
     fs_ = sampleRate;
@@ -34,8 +42,6 @@ void PitchTracker::prepare(double sampleRate) {
     hfSlotLen_ = std::max(1, static_cast<int>(0.001 * fs_));
     gateHoldSamples_ = static_cast<int>(0.040 * fs_);
     refractorySamples_ = static_cast<int>(0.030 * fs_);
-    muteRefRel_ = onePoleCoef(150.0f, fs);
-    muteArmDelay_ = static_cast<int>(0.030 * fs_);
     setSettings(set_);
     reset();
 }
@@ -51,7 +57,7 @@ void PitchTracker::reset() {
     noteActive_ = false; pendingRetrigger_ = false;
     candCount_ = 0; peakEnv_ = 0; dynNorm_ = dynSmooth_ = 0;
     lastAp_ = 1; lastEstHz_ = 0;
-    muteEnv_ = muteRef_ = 0; sinceOnsetFull_ = 1 << 30; invalidRun_ = 0; requireOnset_ = false;
+    muteEnv_ = notePeakPow_ = 0; std::memset(muteHist_, 0, sizeof(muteHist_)); muteHistPos_ = 0; muteLowMs_ = 0; sinceOnsetFull_ = 1 << 30; invalidRun_ = 0; requireOnset_ = false;
     sinceSoftOnset_ = 1 << 30;
 }
 
@@ -59,7 +65,40 @@ void PitchTracker::releaseNote() {
     noteActive_ = false;
     pendingRetrigger_ = false;
     candCount_ = 0;
-    requireOnset_ = true;
+    muteLowMs_ = 0;
+    // After a mute, wait for a new pick: a muted string still rings faintly and
+    // must not restart the note. (Gate only mode: the gate handles that.)
+    requireOnset_ = set_.releaseMode != 0;
+}
+
+// Mean-square level of the band-limited signal over a whole number of periods
+// of the current note (at least 3 ms): no ripple, and it follows a mute
+// within about one period.
+float PitchTracker::periodPower() const {
+    const float hz = currentHz_ > 0.0f ? currentHz_ : 100.0f;
+    const float period = static_cast<float>(fsD_) / hz;
+    const int k = std::max(1, static_cast<int>(std::ceil(0.003 * fsD_ / period)));
+    const int n = std::clamp(static_cast<int>(std::lround(period * k)), 8, kHist - 1);
+    const float* p = &hist_[histW_ + kHist - n];
+    float acc = 0.0f;
+    for (int i = 0; i < n; ++i) acc += p[i] * p[i];
+    return acc / static_cast<float>(n);
+}
+
+// Called once per millisecond: release the note if the string level has
+// suddenly collapsed (fingers / palm muting) and stays down.
+void PitchTracker::checkMute() {
+    if (set_.releaseMode == 0 || !noteActive_ || sinceOnsetFull_ <= muteArmDelay_) { muteLowMs_ = 0; return; }
+    const ReleaseTuning& r = kRelease[set_.releaseMode];
+    float ref = 0.0f;
+    for (int k = r.refNearMs; k <= r.refFarMs; ++k)
+        ref = std::max(ref, muteHist_[(muteHistPos_ - k + kMuteHist) % kMuteHist]);
+    if (muteEnv_ < ref * mutePow_) {
+        const float periodMs = currentHz_ > 0.0f ? 1000.0f / currentHz_ : 10.0f;
+        if (++muteLowMs_ >= static_cast<int>(std::max(r.holdMs, r.holdPeriods * periodMs))) releaseNote();
+    } else {
+        muteLowMs_ = 0;
+    }
 }
 
 void PitchTracker::setSettings(const TrackerSettings& s) {
@@ -72,6 +111,13 @@ void PitchTracker::setSettings(const TrackerSettings& s) {
     hf_.setHighpass(std::min(2500.0f, fs * 0.2f), 0.707f, fs);   // pick-attack detector
     gateLin_ = dbToLin(s.gateDb);
     hop_ = std::max(4, static_cast<int>(std::lround(s.hopMs * 0.001 * fsD_)));
+    set_.releaseMode = std::clamp(s.releaseMode, 0, 2);
+    const ReleaseTuning& r = kRelease[set_.releaseMode];
+    mutePow_ = std::pow(10.0f, r.dropDb / 10.0f);       // on mean-square values
+    lossPow_ = std::pow(10.0f, r.lossDb / 10.0f);
+    lossSamples_ = static_cast<int>(r.lossMs * 0.001 * fsD_);
+    muteArmDelay_ = static_cast<int>(r.armMs * 0.001 * fs_);
+    if (set_.releaseMode == 0) requireOnset_ = false;
 }
 
 void PitchTracker::process(const float* x, int n) {
@@ -87,6 +133,13 @@ void PitchTracker::process(const float* x, int n) {
             hfSlot_ = 0;
             hfHistPos_ = (hfHistPos_ + 1) % kHfHist;
             hfHist_[hfHistPos_] = hfPow_;
+            muteEnv_ = periodPower();
+            if (noteActive_ && muteEnv_ > notePeakPow_) notePeakPow_ = muteEnv_;
+            muteHistPos_ = (muteHistPos_ + 1) % kMuteHist;
+            // Only the level after the pick attack has settled counts as the
+            // reference: the attack is often 10..20 dB louder than the sustain.
+            muteHist_[muteHistPos_] = sinceOnsetFull_ > muteArmDelay_ ? muteEnv_ : 0.0f;
+            checkMute();
         }
         if (refractory_ > 0) --refractory_;
         if (sinceSoftOnset_ < (1 << 30)) ++sinceSoftOnset_;
@@ -136,15 +189,7 @@ void PitchTracker::process(const float* x, int n) {
 
         const float l = lp2_.process(lp1_.process(h));
 
-        // ---- mute detection: a sudden drop of the (band-limited) string level
-        muteEnv_ += muteCoef_ * (l * l - muteEnv_);
         if (sinceOnsetFull_ < (1 << 30)) ++sinceOnsetFull_;
-        if (noteActive_ && sinceOnsetFull_ > muteArmDelay_) {
-            muteRef_ = std::max(muteEnv_, muteRef_ + muteRefRel_ * (muteEnv_ - muteRef_));
-            if (muteEnv_ < muteRef_ * kMuteDropPow) releaseNote();
-        } else {
-            muteRef_ = muteEnv_;
-        }
 
         if (++decimPhase_ >= decim_) {
             decimPhase_ = 0;
@@ -154,11 +199,6 @@ void PitchTracker::process(const float* x, int n) {
             if (sinceOnset_ < (1 << 30)) ++sinceOnset_;
             if (++hopCount_ >= hop_) { hopCount_ = 0; analyse(); }
         }
-    }
-    // mute-detector smoothing: 1.5 periods of the current note (4..25 ms)
-    {
-        const float periodMs = currentHz_ > 0.0f ? 1000.0f / currentHz_ : 10.0f;
-        muteCoef_ = onePoleCoef(clampf(1.5f * periodMs, 4.0f, 25.0f), static_cast<float>(fs_));
     }
     const float d = peakEnv_ > 1e-6f ? clampf(fastEnv_ / peakEnv_, 0.0f, 1.0f) : 0.0f;
     dynSmooth_ += 0.3f * (d - dynSmooth_);
@@ -287,8 +327,8 @@ void PitchTracker::onEstimate(bool valid, float hz, float ap) {
     if (!valid) {
         // No clear pitch left (only noise / a muted string): end the note.
         invalidRun_ += hop_;
-        if (noteActive_ && !pendingRetrigger_ && !onsetWindow_ &&
-            invalidRun_ > static_cast<int>(kPitchLossMs * 0.001 * fsD_))
+        if (set_.releaseMode != 0 && noteActive_ && !pendingRetrigger_ && !onsetWindow_ &&
+            invalidRun_ > lossSamples_ && muteEnv_ < notePeakPow_ * lossPow_)
             releaseNote();
         return;
     }
@@ -323,6 +363,8 @@ void PitchTracker::onEstimate(bool valid, float hz, float ap) {
 void PitchTracker::noteOn(float hz) {
     noteActive_ = true;
     pendingRetrigger_ = false;
+    notePeakPow_ = muteEnv_;
+    muteLowMs_ = 0;
     ++noteCounter_;
     currentHz_ = hz;
     currentMidi_ = hzToMidi(hz);

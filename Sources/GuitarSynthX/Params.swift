@@ -115,6 +115,6 @@ final class Param: ObservableObject, Identifiable {
 /// deliberately left untouched when a preset is loaded.
 func isSoundParam(_ key: String) -> Bool {
     if key.hasPrefix("in.") || key.hasPrefix("out.") || key.hasPrefix("mst.") { return false }
-    let rigKeys: Set<String> = ["trk.lowest", "trk.highest", "trk.threshold", "trk.stability", "trk.hop", "trk.retrigger"]
+    let rigKeys: Set<String> = ["trk.lowest", "trk.highest", "trk.threshold", "trk.stability", "trk.hop", "trk.retrigger", "trk.release"]
     return !rigKeys.contains(key)
 }

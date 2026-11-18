@@ -2,6 +2,7 @@
 // so it can be unit-tested and benchmarked off-device.
 #pragma once
 #include <atomic>
+#include <vector>
 #include "Params.hpp"
 #include "PitchTracker.hpp"
 #include "Synth.hpp"
@@ -42,6 +43,15 @@ public:
     void readScope(float* dst, int n) const;
     double sampleRate() const { return fs_; }
 
+    // Input recorder (for tuning the tracker on real guitar signals). The UI thread
+    // starts/stops it; the audio thread only appends while it runs.
+    int  recordStart(double maxSeconds);     // UI thread; returns channels recorded
+    int  recordStop();                        // UI thread; returns frames recorded
+    bool recording() const { return recOn_.load(std::memory_order_relaxed); }
+    int  recordFrames() const { return recLen_.load(std::memory_order_acquire); }
+    int  recordChannels() const { return recCh_; }
+    const float* recordData() const { return rec_.data(); }   // valid after recordStop
+
     // for tests
     const PitchTracker& tracker(int i) const { return trackers_[i]; }
 
@@ -56,6 +66,11 @@ private:
     int numIn_ = 1;
     std::atomic<float> params_[P_COUNT];
     std::atomic<bool> panic_{false};
+
+    std::vector<float> rec_;                 // interleaved, recCh_ channels
+    int recCh_ = 1, recCap_ = 0, recPos_ = 0;
+    std::atomic<bool> recOn_{false}, recBusy_{false};
+    std::atomic<int>  recLen_{0};
 
     PitchTracker trackers_[kMaxTrackers];
     Voice voices_[kMaxVoices];

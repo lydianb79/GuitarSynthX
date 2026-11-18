@@ -21,6 +21,7 @@ struct TrackerSettings {
     float hopMs      = 1.0f;
     float gateDb     = -54.0f;
     bool  retrigger  = true;
+    int   releaseMode = 1;     // Note Off: 0 gate only, 1 normal, 2 fast
 };
 
 class PitchTracker {
@@ -72,10 +73,16 @@ private:
     uint32_t fullSweep_ = 0;
 
     // note-off detection
-    float muteEnv_ = 0;        // mean-square level of the band-limited signal (period-adaptive smoothing)
-    float muteRef_ = 0;        // slowly decaying reference: the note's recent level
-    float muteCoef_ = 0.01f;   // smoothing coefficient for muteEnv_ (depends on the note's period)
-    float muteRefRel_ = 0;
+    float muteEnv_ = 0;        // mean-square level of the band-limited signal (over whole periods, updated every ms)
+    static constexpr int kMuteHist = 128;  // 1 ms slots of muteEnv_
+    float muteHist_[kMuteHist] = {};
+    int   muteHistPos_ = 0;
+    int   muteLowMs_ = 0;      // ms the level has stayed collapsed
+    float notePeakPow_ = 0;    // highest muteEnv_ since the note started
+    void  checkMute();
+    float periodPower() const;
+    float mutePow_ = 0.0158f, lossPow_ = 0.00025f;
+    int   lossSamples_ = 0;
     int   muteArmDelay_ = 0;   // samples after an onset before mute detection is armed
     int   sinceOnsetFull_ = 1 << 30;
     int   invalidRun_ = 0;     // decimated samples since the last valid pitch estimate

@@ -89,7 +89,7 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 | Area | What it does |
 |---|---|
 | **Presets** (left) | 70 factory sounds in 12 categories (see [Presets](#presets)). Search by name or category, click a category to open or close it, step through sounds with ◀ ▶ or ⌘[ / ⌘]. **Save** stores your own under *User* (in `~/Library/Application Support/GuitarSynthX/Presets`). Loading a preset changes only the sound; your input, gate and tracking settings stay as they are. |
-| **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Dynamics** makes the synth volume follow your playing. |
+| **Input & Tracking** | Mono/Hex input mode, input channel, gain, gate, output channel pair. Pitch range, sensitivity, stability and analysis rate. **Pitch Mode**: *Track* follows bends and vibrato exactly; *Quantize* snaps to semitones; *Quantize+Glide* adds portamento. **Pick Retrigger** restarts the envelopes on every pick; turn it off to play everything legato. **Note Off** sets how quickly notes end when you mute (see [Stopping notes](#stopping-notes)). **Dynamics** makes the synth volume follow your playing. |
 | **Oscillators** | Osc A (up to 7-voice unison), Osc B (semitones/fine tune), FM from B to A, pulse width, sub-oscillator, noise. |
 | **Filter** | 24 dB ladder or 12 dB low-pass/band-pass/high-pass, drive, key tracking, **Pick Dynamics** (picking harder opens the filter, like an auto-wah), filter envelope. |
 | **Amp & LFO** | Amp envelope, velocity and **Patch Level** (the preset's own volume, applied after the effects). LFO with fade-in for vibrato, filter, pulse width and tremolo. |
@@ -100,7 +100,8 @@ Play single notes with a normal guitar input. Chords need a hex pickup (see
 
 **Knobs:** drag up or down, hold ⇧ for fine control, double-click to reset.
 **Shortcuts:** ⌘] / ⌘[ next/previous preset, ⌘R starts/stops audio,
-⌘. silences everything (panic), ⌘, opens Audio Settings.
+⌘. silences everything (panic), ⇧⌘R records your input, ⌘, opens Audio
+Settings.
 
 The top bar shows the hardware round-trip latency, the DSP load (the share of
 the real-time budget the audio engine uses), dropouts (*XRUNS*) and active
@@ -151,7 +152,16 @@ impressions, not samples.
 3. **Buffer size 32–64 samples.** If the *XRUNS* counter keeps climbing, go up
    one step.
 4. **48 kHz** is the sweet spot. Higher rates shorten buffers but cost more CPU.
-5. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
+5. **Turn off your interface's direct monitoring of the guitar**, or you hear
+   the dry guitar next to the synth. The app only plays the guitar itself if you
+   turn up **Dry Guitar** (off by default). On a Universal Audio Apollo, press
+   **Mute** on the guitar's channel strip in Console, or pull its fader all the
+   way down: that removes it from the main monitor mix (monitors *and*
+   headphones) while the app still receives it. Muting it only in a
+   headphone cue mix leaves it on the monitors. Other interfaces have a
+   *Direct Monitor* knob or switch, or a mixer app (RME TotalMix, MOTU,
+   Focusrite Control) where you turn the input down in the output mix.
+6. **Set Gate** just above your guitar's noise floor, and set **Lowest Note**
    to the lowest note you actually play. A higher lowest note means faster
    detection and less CPU.
 
@@ -184,19 +194,33 @@ Your audio interface's own latency comes on top of that.
 
 ### Stopping notes
 
-A note ends as soon as one of these happens:
+**Note Off** (*Input & Tracking* tab, *Note Behaviour*) sets how a note ends:
 
-* **You mute the string.** A sudden drop of the string's level ends the note.
-  This takes about 10 ms on the high strings and 45 ms on the low E, even with
-  background noise.
-* **No clear pitch is left** for 80 ms, for example only noise or hum after
-  the string has stopped.
-* **The input falls below the Gate.**
+| Note Off | A note ends when… | After muting a string |
+|---|---|---|
+| **Gate only** | the input falls below the **Gate** (as in 1.1) | about 150 ms; a note can hang if noise or a leaked sound stays above the gate |
+| **Normal** (default) | the string's level suddenly drops 18 dB and stays down, or no pitch is left once the note has faded 45 dB, or the gate closes | about 25 ms on the high strings, 40 ms on the low E |
+| **Fast** | the same, with a 14 dB drop and shorter checks | about 15 ms (high) to 25 ms (low E); also ends notes that hang on in Normal because a faint tone stays on the string |
 
-After a note has ended this way, only a new pick starts the next one, so
-leftover hum or sound leaking back from the speakers can't restart it. What you
-hear after the note ends is the preset's own release and its delay/reverb tail.
-For a tighter stop, shorten **Release** on the *Amp & LFO* tab.
+The level drop is measured against the note's level *after* the pick attack
+has settled, so a loud attack that falls back to a quieter sustain doesn't end
+the note. If notes still stop too early with your guitar, choose **Gate only**;
+if they hang after you mute, try **Fast**.
+
+In Normal and Fast, after a note has ended only a new pick starts the next one,
+so leftover hum or sound leaking back from the speakers can't restart it. What
+you hear after the note ends is the preset's own release and its delay/reverb
+tail. For a tighter stop, shorten **Release** on the *Amp & LFO* tab.
+
+### Recording your input
+
+**Audio → Record Input…** (⇧⌘R) records exactly what the pitch tracker hears
+(the selected input channel after Input Gain; all six channels in Hex mode),
+for up to 5 minutes. A red **REC** counter appears in the tuner bar; click it
+or press ⇧⌘R again to stop. The recording is saved as a 32-bit WAV file in
+`~/Music/GuitarSynthX Recordings`, with a text file of the app's settings next
+to it, and Finder opens on it. Send both files along with a bug report about
+note detection: the engine tests can replay them exactly.
 
 ### Fast playing
 
@@ -253,7 +277,12 @@ open Package.swift                   # in Xcode: GuitarSynthX scheme, Release, �
 ```bash
 ./Tests/run_tests.sh              # engine: pitch tracking, effects, safety, CPU
 python3 Tests/check_presets.py    # every factory preset: valid, safe, level-matched
+./Tests/replay.sh "Input ….wav"   # replay a recording from Audio > Record Input
 ```
+
+`replay.sh` applies the settings saved next to the recording (add
+`key=value` arguments to override, e.g. `trk.release=0`) and prints every
+note start and end it detects.
 
 The engine tests need no audio hardware, so they also run on Linux. They play
 synthetic plucked strings (E2–C6 at 44.1, 48 and 96 kHz) into the pitch
@@ -262,8 +291,10 @@ tracker, and check:
 * note accuracy and detection time
 * legato slides, and re-picks over a still-ringing note
 * that long notes don't retrigger by themselves
-* how fast a muted note ends, with silence, background noise or a leaked tone
-  after the mute
+* how fast a muted note ends in each Note Off mode, with silence, background
+  noise or a leaked tone after the mute
+* that sustained notes with a loud attack, deep level beating, vibrato and hum
+  are not cut short
 * fast 16th-note sequences at 150 and 180 BPM, on one string and across two
 * delay timing with tempo sync, and ducking
 * reverb tails decaying at every type and shimmer setting
